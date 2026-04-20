@@ -9,6 +9,10 @@ import { SocialSignalScanner } from './social-signal.scanner';
 import { TrendRadar } from './trend-radar';
 import { ContractSafetyScanner } from './contract-safety.scanner';
 import { GemResearchEngine } from './gem-research.engine';
+import { CoinGeckoScanner, TrendingCoinResult } from './coingecko.scanner';
+import { GeckoTerminalScanner } from './geckoterminal.scanner';
+import { DEXToolsScanner } from './dextools.scanner';
+import { WhaleTracker, WhaleTransfer } from './whale-tracker';
 
 @Injectable()
 export class GemHuntService {
@@ -22,6 +26,10 @@ export class GemHuntService {
     private readonly trendRadar: TrendRadar,
     private readonly safetyScanner: ContractSafetyScanner,
     private readonly researchEngine: GemResearchEngine,
+    private readonly coinGeckoScanner: CoinGeckoScanner,
+    private readonly geckoTerminalScanner: GeckoTerminalScanner,
+    private readonly dexToolsScanner: DEXToolsScanner,
+    private readonly whaleTracker: WhaleTracker,
     private readonly telegramService: TelegramService,
   ) {}
 
@@ -62,6 +70,78 @@ export class GemHuntService {
       this.logger.log(`TrendRadar: detected ${themes.length} themes — ${themes.map((t) => `${t.theme}(${t.momentum})`).join(', ')}`);
     } catch (err: any) {
       this.logger.warn(`TrendRadar scan error: ${err.message}`);
+    }
+  }
+
+  /** CoinGecko trending scan — runs every 5 minutes, after TrendRadar */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async runCoinGeckoScan() {
+    if (process.env['COINGECKO_ENABLED'] === 'false') return;
+    try {
+      const gems = await this.coinGeckoScanner.scanTrendingGems();
+      this.logger.log(`CoinGecko: found ${gems.length} pre-pump gems`);
+      for (const gem of gems) {
+        if ((gem.signalStrength ?? 0) > 70 && gem.dexPair) {
+          await this.processCoinGeckoGem(gem);
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`CoinGecko scan error: ${err.message}`);
+    }
+  }
+
+  /** GeckoTerminal scan — runs every 5 minutes, fresh liquidity events */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async runGeckoTerminalScan() {
+    if (process.env['GECKOTERMINAL_ENABLED'] === 'false') return;
+    try {
+      const network = 'solana';
+      const [topPools, newPools] = await Promise.all([
+        this.geckoTerminalScanner.scanTopPools(network),
+        this.geckoTerminalScanner.getNewPools(network, 30),
+      ]);
+      this.logger.log(`GeckoTerminal: ${topPools.length} top pools, ${newPools.length} new pools`);
+      // Process high-signal new pools
+      for (const pool of newPools.slice(0, 5)) {
+        await this.processGeckoTerminalPool(pool);
+      }
+    } catch (err: any) {
+      this.logger.warn(`GeckoTerminal scan error: ${err.message}`);
+    }
+  }
+
+  /** DEXTools announcement scan — runs every 5 minutes */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async runDEXToolsScan() {
+    if (process.env['DEXTOOLS_ENABLED'] === 'false') return;
+    try {
+      const chain = 'solana';
+      const announcements = await this.dexToolsScanner.getNewAnnouncedTokens(chain, 20);
+      this.logger.log(`DEXTools: ${announcements.length} new announcements on ${chain}`);
+      for (const ann of announcements.slice(0, 5)) {
+        if ((ann.estimatedMC ?? 0) < 2_000_000) {
+          await this.processDEXToolsAnnouncement(ann);
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`DEXTools scan error: ${err.message}`);
+    }
+  }
+
+  /** Whale tracker scan — runs every 5 minutes */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async runWhaleTrackerScan() {
+    try {
+      const moves = await this.whaleTracker.getRecentWhaleMoves();
+      const buys = moves.filter((m) => m.type === 'buy' && (m.amountUsd ?? 0) > 1_000);
+      this.logger.log(`WhaleTracker: ${moves.length} moves, ${buys.length} significant buys`);
+      for (const buy of buys) {
+        if (buy.tokenAddress) {
+          await this.processWhaleBuy(buy);
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`WhaleTracker scan error: ${err.message}`);
     }
   }
 
@@ -208,6 +288,217 @@ export class GemHuntService {
       this.logger.warn(`DexScreener search failed for "${keyword}": ${err.message}`);
       return [];
     }
+  }
+
+  // ─── New Source Processors ───────────────────────────────────────────────────
+
+  private async processCoinGeckoGem(gem: TrendingCoinResult) {
+    if (!gem.dexPair) return;
+    const chain = gem.dexPair.chainId ?? 'solana';
+    const safetyReport = await this.safetyScanner.scan(gem.dexPair.address, chain);
+    const report = await this.researchEngine.generateReport({
+      token: gem.dexPair,
+      chain,
+      theme: {
+        theme: `CG Trending #${gem.coingeckoCoin.marketCapRank ?? '?'}`,
+        description: `CoinGecko trending coin: ${gem.coingeckoCoin.name}`,
+        keywords: [gem.coingeckoCoin.symbol],
+        platforms: { twitter: 0, reddit: 0, telegram: 0 },
+        sentiment: 0.5,
+        momentum: 'rising' as const,
+        catalyst: 'CoinGecko trending',
+        tokensFound: [],
+      },
+      socialSignals: [],
+      safetyReport,
+    });
+
+    if (report.thesis === 'BUY' && (report.thesisStrength ?? 0) > 70) {
+      await this.sendCoinGeckoGemAlert(gem, report);
+    }
+  }
+
+  private async processGeckoTerminalPool(pool: any) {
+    if (!pool.token0Address) return;
+    // Build a synthetic DexScreenerToken from pool data
+    const token: DexScreenerToken = {
+      address: pool.token0Address,
+      chainId: pool.network,
+      dexId: 'geckoterminal',
+      name: pool.token0Symbol ?? '',
+      symbol: pool.token0Symbol ?? '',
+      marketCap: String(pool.liquidity * 2), // approximate
+      liquidity: String(pool.liquidity),
+      volume24h: String(pool.volume24h),
+      priceUsd: String(pool.price),
+      priceChange: { h24: '0' },
+      pairAddress: pool.poolAddress,
+    };
+
+    const chain = pool.network;
+    const safetyReport = await this.safetyScanner.scan(pool.token0Address, chain);
+    const report = await this.researchEngine.generateReport({
+      token,
+      chain,
+      theme: {
+        theme: 'Fresh Liquidity',
+        description: `New pool on GeckoTerminal: ${pool.token0Symbol}/${pool.token1Symbol}`,
+        keywords: [pool.token0Symbol ?? ''],
+        platforms: { twitter: 0, reddit: 0, telegram: 0 },
+        sentiment: 0.5,
+        momentum: 'rising' as const,
+        catalyst: 'GeckoTerminal new pool',
+        tokensFound: [],
+      },
+      socialSignals: [],
+      safetyReport,
+    });
+
+    if (report.thesis === 'BUY' && (report.thesisStrength ?? 0) > 70) {
+      await this.sendGeckoTerminalAlert(pool, report);
+    }
+  }
+
+  private async processDEXToolsAnnouncement(ann: any) {
+    // Build a synthetic token from announcement
+    const token: DexScreenerToken = {
+      address: ann.tokenAddress,
+      chainId: ann.chain,
+      dexId: 'dextools',
+      name: ann.tokenName ?? ann.tokenSymbol ?? '',
+      symbol: ann.tokenSymbol ?? '',
+      marketCap: ann.estimatedMC ? String(ann.estimatedMC) : '0',
+      liquidity: '0',
+      volume24h: '0',
+      priceUsd: ann.priceUSD ? String(ann.priceUSD) : '0',
+      priceChange: { h24: '0' },
+      pairAddress: ann.tokenAddress,
+    };
+
+    const chain = ann.chain;
+    const safetyReport = await this.safetyScanner.scan(ann.tokenAddress, chain);
+    const report = await this.researchEngine.generateReport({
+      token,
+      chain,
+      theme: {
+        theme: 'New Announcement',
+        description: `DEXTools announced: ${ann.tokenName ?? ann.tokenSymbol}`,
+        keywords: [ann.tokenSymbol ?? ''],
+        platforms: { twitter: 0, reddit: 0, telegram: 0 },
+        sentiment: 0.5,
+        momentum: 'rising' as const,
+        catalyst: 'DEXTools announcement',
+        tokensFound: [],
+      },
+      socialSignals: [],
+      safetyReport,
+    });
+
+    if (report.thesis === 'BUY' && (report.thesisStrength ?? 0) > 70) {
+      await this.sendDEXToolsAlert(ann, report);
+    }
+  }
+
+  private async processWhaleBuy(buy: WhaleTransfer) {
+    if (!buy.tokenAddress) return;
+    const token: DexScreenerToken = {
+      address: buy.tokenAddress,
+      chainId: buy.chain,
+      dexId: 'unknown',
+      name: buy.tokenSymbol ?? '',
+      symbol: buy.tokenSymbol ?? '',
+      marketCap: '0',
+      liquidity: '0',
+      volume24h: '0',
+      priceUsd: '0',
+      priceChange: { h24: '0' },
+      pairAddress: '',
+    };
+
+    const safetyReport = await this.safetyScanner.scan(buy.tokenAddress, buy.chain);
+    const report = await this.researchEngine.generateReport({
+      token,
+      chain: buy.chain,
+      theme: {
+        theme: `Whale Buy: ${buy.walletName}`,
+        description: `${buy.walletName} bought ${buy.tokenSymbol} (${this.fmtUsd(String(buy.amountUsd))})`,
+        keywords: [buy.tokenSymbol ?? ''],
+        platforms: { twitter: 0, reddit: 0, telegram: 0 },
+        sentiment: 0.8,
+        momentum: 'rising' as const,
+        catalyst: 'Whale buy',
+        tokensFound: [],
+      },
+      socialSignals: [],
+      safetyReport,
+    });
+
+    if (report.thesis === 'BUY' && (report.thesisStrength ?? 0) > 60) {
+      await this.sendWhaleBuyAlert(buy, report);
+    }
+  }
+
+  private async sendCoinGeckoGemAlert(gem: TrendingCoinResult, report: any) {
+    const lines = [
+      `🟡 *COINGECKO GEM SIGNAL — ${gem.coingeckoCoin.name} (${gem.coingeckoCoin.symbol})*`,
+      '',
+      `📈 CG Rank: #${gem.coingeckoCoin.marketCapRank ?? '?'} | Signal Strength: ${gem.signalStrength}/100`,
+      `💰 DEX MC: $${this.fmtUsd(String(gem.dexPair?.marketCap))} | Upside Potential: ${gem.upsidePotential.toFixed(1)}x`,
+      `🔗 Pair: https://dexscreener.com/${gem.dexPair?.chainId ?? 'solana'}/${gem.dexPair?.address}`,
+      '',
+      `💡 Thesis: ${report.thesisReasoning ?? 'CoinGecko trending with low DEX market cap — potential pre-pump gem.'}`,
+      '',
+      `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
+    ].filter(Boolean);
+
+    await this.telegramService.sendMessage(lines.join('\n'));
+  }
+
+  private async sendGeckoTerminalAlert(pool: any, report: any) {
+    const lines = [
+      `🟢 *GECKOTERMINAL GEM — Fresh Liquidity*`,
+      '',
+      `Pool: ${pool.token0Symbol}/${pool.token1Symbol}`,
+      `💧 Liq: $${this.fmtUsd(String(pool.liquidity))} | 📈 Vol: $${this.fmtUsd(String(pool.volume24h))}/24h`,
+      `🔗 https://dexscreener.com/${pool.network}/${pool.poolAddress}`,
+      '',
+      `💡 Thesis: ${report.thesisReasoning ?? 'New pool with fresh liquidity detected.'}`,
+      '',
+      `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
+    ].filter(Boolean);
+
+    await this.telegramService.sendMessage(lines.join('\n'));
+  }
+
+  private async sendDEXToolsAlert(ann: any, report: any) {
+    const lines = [
+      `🟠 *DEXTOOLS ANNOUNCEMENT — ${ann.tokenSymbol ?? ann.tokenName}*`,
+      '',
+      ann.estimatedMC ? `📊 Est. MC: $${this.fmtUsd(String(ann.estimatedMC))}` : '',
+      ann.priceUSD ? `💰 Price: $${parseFloat(ann.priceUSD).toFixed(6)}` : '',
+      ann.txHash ? `🔗 TX: https://dexscreener.com/${ann.chain}/${ann.txHash}` : '',
+      '',
+      `💡 Thesis: ${report.thesisReasoning ?? 'New token announced via DEXTools — dev is marketing.'}`,
+      '',
+      `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
+    ].filter(Boolean);
+
+    await this.telegramService.sendMessage(lines.join('\n'));
+  }
+
+  private async sendWhaleBuyAlert(buy: WhaleTransfer, report: any) {
+    const lines = [
+      `🐋 *WHALE SIGNAL — ${buy.walletName} bought ${buy.tokenSymbol}*`,
+      '',
+      `💰 Amount: $${this.fmtUsd(String(buy.amountUsd))} | Chain: ${buy.chain.toUpperCase()}`,
+      buy.txHash ? `🔗 TX: https://dexscreener.com/${buy.chain}/${buy.txHash}` : '',
+      '',
+      `💡 Thesis: Smart money moving — ${buy.walletName} bought ${buy.tokenSymbol}. ${report.thesisReasoning ?? ''}`,
+      '',
+      `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
+    ].filter(Boolean);
+
+    await this.telegramService.sendMessage(lines.join('\n'));
   }
 
   // ─── Telegram Alert ───────────────────────────────────────────────────────

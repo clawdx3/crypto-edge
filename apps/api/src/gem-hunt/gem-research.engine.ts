@@ -11,6 +11,11 @@ export interface GemResearchInput {
   theme: TrendingThemeResult | null;
   socialSignals: SocialSignalResult[];
   safetyReport: ContractSafetyReport;
+  // New signal sources
+  coingeckoGem?: { signalStrength: number; upsidePotential: number };
+  geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
+  dexToolsAnnouncement?: { estimatedMC: number };
+  whaleBuy?: { walletName: string; amountUsd: number };
 }
 
 export interface TokenResearchReportOutput {
@@ -63,7 +68,7 @@ export class GemResearchEngine {
    * Generate a full DD research report for a token.
    */
   async generateReport(input: GemResearchInput): Promise<TokenResearchReportOutput> {
-    const { token, chain, theme, socialSignals, safetyReport } = input;
+    const { token, chain, theme, socialSignals, safetyReport, coingeckoGem, geckoTerminalPool, dexToolsAnnouncement, whaleBuy } = input;
 
     // Collect social signal data
     const twitterSignal = socialSignals.find((s) => s.platform === 'twitter');
@@ -78,7 +83,7 @@ export class GemResearchEngine {
     const onChainScore = this.scoreOnChain(token);
 
     // Determine thesis and strength
-    const { thesis, strength, reasoning } = this.determineThesis({
+    const thesisParams: Parameters<typeof this.determineThesis>[0] = {
       socialScore,
       safetyScore,
       onChainScore,
@@ -90,7 +95,12 @@ export class GemResearchEngine {
       safetyReport,
       twitterSignal,
       redditSignal,
-    });
+    };
+    if (coingeckoGem) thesisParams.coingeckoGem = coingeckoGem;
+    if (geckoTerminalPool) thesisParams.geckoTerminalPool = geckoTerminalPool;
+    if (dexToolsAnnouncement) thesisParams.dexToolsAnnouncement = dexToolsAnnouncement;
+    if (whaleBuy) thesisParams.whaleBuy = whaleBuy;
+    const { thesis, strength, reasoning } = this.determineThesis(thesisParams);
 
     const riskLevel = this.determineRiskLevel(safetyReport, socialScore, token);
 
@@ -270,16 +280,43 @@ export class GemResearchEngine {
     safetyReport: ContractSafetyReport;
     twitterSignal: SocialSignalResult | undefined;
     redditSignal: SocialSignalResult | undefined;
+    coingeckoGem?: { signalStrength: number; upsidePotential: number };
+    geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
+    dexToolsAnnouncement?: { estimatedMC: number };
+    whaleBuy?: { walletName: string; amountUsd: number };
   }): { thesis: 'BUY' | 'HOLD' | 'AVOID'; strength: number; reasoning: string } {
     const {
       socialScore, safetyScore, onChainScore,
       combinedSentiment, avgEngagement, theme, token,
       safetyReport, twitterSignal, redditSignal,
+      coingeckoGem, geckoTerminalPool, dexToolsAnnouncement, whaleBuy,
     } = params;
 
     // Weighted composite score
     // Social: 35%, Safety: 35%, On-chain: 30%
-    const composite = (socialScore * 0.35) + (safetyScore * 0.35) + (onChainScore * 0.30);
+    let composite = (socialScore * 0.35) + (safetyScore * 0.35) + (onChainScore * 0.30);
+
+    // New signal bonuses
+    // CoinGecko trending = bonus points (coins already getting attention)
+    if (coingeckoGem) {
+      composite += (coingeckoGem.signalStrength / 100) * 10; // up to +10
+      if (coingeckoGem.upsidePotential > 2) composite += 5; // high upside potential
+    }
+    // GeckoTerminal new pool = bonus (fresh liquidity)
+    if (geckoTerminalPool) {
+      if (geckoTerminalPool.isNew) composite += 8;
+      if (geckoTerminalPool.liquidity > 50_000) composite += 7;
+    }
+    // DEXTools announcement = strong signal (dev is marketing)
+    if (dexToolsAnnouncement) {
+      composite += 10;
+      if (dexToolsAnnouncement.estimatedMC < 500_000) composite += 5; // early announcement
+    }
+    // Whale buy = very strong signal (smart money moving)
+    if (whaleBuy) {
+      composite += 15;
+      if (whaleBuy.amountUsd > 10_000) composite += 5;
+    }
 
     // AVOID conditions
     if (safetyReport.isHoneypot === true) {
@@ -343,6 +380,10 @@ export class GemResearchEngine {
     safetyReport: ContractSafetyReport;
     twitterSignal: SocialSignalResult | undefined;
     redditSignal: SocialSignalResult | undefined;
+    coingeckoGem?: { signalStrength: number; upsidePotential: number };
+    geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
+    dexToolsAnnouncement?: { estimatedMC: number };
+    whaleBuy?: { walletName: string; amountUsd: number };
   }): string {
     const lines: string[] = [];
 
@@ -379,6 +420,12 @@ export class GemResearchEngine {
     if (change > 20) lines.push(`${change.toFixed(1)}% 24h price momentum.`);
     if (p.avgEngagement > 100) lines.push(`High engagement (avg ${p.avgEngagement.toFixed(0)} per post) indicates genuine community interest.`);
 
+    // New signal bonuses
+    if (p.coingeckoGem) lines.push(`CoinGecko trending: CG signal ${p.coingeckoGem.signalStrength}/100, ${p.coingeckoGem.upsidePotential.toFixed(1)}x upside potential.`);
+    if (p.geckoTerminalPool?.isNew) lines.push(`Fresh pool on GeckoTerminal with $${(p.geckoTerminalPool.liquidity / 1000).toFixed(0)}K liquidity.`);
+    if (p.dexToolsAnnouncement) lines.push(`Dev is marketing — new token announced on DEXTools (est. MC: $${((p.dexToolsAnnouncement.estimatedMC ?? 0) / 1000).toFixed(0)}K).`);
+    if (p.whaleBuy) lines.push(`🐋 Whale signal: ${p.whaleBuy.walletName} bought $${(p.whaleBuy.amountUsd / 1000).toFixed(0)}K — smart money moving.`);
+
     if (lines.length === 0) {
       lines.push('All key metrics are positive. Composite score above threshold.');
     }
@@ -396,6 +443,10 @@ export class GemResearchEngine {
     combinedSentiment: number;
     theme: TrendingThemeResult | null;
     token: DexScreenerToken;
+    coingeckoGem?: { signalStrength: number; upsidePotential: number };
+    geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
+    dexToolsAnnouncement?: { estimatedMC: number };
+    whaleBuy?: { walletName: string; amountUsd: number };
   }): string {
     const lines: string[] = [];
 

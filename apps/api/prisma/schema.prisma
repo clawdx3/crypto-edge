@@ -371,3 +371,73 @@ model DiscoveredGem {
   @@index([chain, status])
   @@index([createdAt])
 }
+
+// Whale Move — tracks smart money movements
+model WhaleMove {
+  id            String   @id @default(cuid())
+  walletAddress String
+  walletName    String
+  chain         String
+  tokenAddress  String?
+  tokenSymbol   String?
+  type          String   // "buy" | "sell" | "transfer"
+  amountUsd     Float?
+  txHash        String?
+  detectedAt    DateTime @default(now())
+
+  @@index([walletAddress, detectedAt])
+  @@index([tokenAddress, detectedAt])
+}
+
+// CoinGecko Gem — trending coins with low DEX market cap (pre-pump gems)
+model CoinGeckoGem {
+  id              String   @id @default(cuid())
+  coingeckoId     String   @unique
+  symbol          String
+  name            String
+  marketCapRank   Int?
+  marketCap       Float?
+  dexPairAddress  String?
+  dexPairChain    String?
+  dexMarketCap    Float?
+  upsidePotential Float?   // ratio: dex MC / coingecko MC
+  signalStrength  Int?     // 0-100
+  detectedAt      DateTime @default(now())
+
+  @@index([upsidePotential])
+}
+
+// GeckoTerminal Pool — fresh liquidity events
+model GeckoTerminalPool {
+  id              String   @id @default(cuid())
+  poolAddress     String   @unique
+  network         String
+  token0Symbol    String?
+  token1Symbol    String?
+  token0Address   String?
+  token1Address   String?
+  volume24h       Float?
+  liquidity       Float?
+  price           Float?
+  isNew           Boolean  @default(false)
+  detectedAt      DateTime @default(now())
+
+  @@index([network, detectedAt])
+  @@index([volume24h])
+}
+
+// DEXTools Announcement — newly announced tokens (real-time pipeline)
+model DEXToolsAnnouncement {
+  id            String   @id @default(cuid())
+  chain         String
+  tokenAddress  String
+  tokenSymbol   String?
+  tokenName     String?
+  txHash        String?
+  priceUSD      Float?
+  estimatedMC   Float?
+  detectedAt    DateTime @default(now())
+
+  @@unique([chain, tokenAddress])
+  @@index([detectedAt])
+}

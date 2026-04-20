@@ -8,6 +8,10 @@ import { SocialSignalScanner } from './social-signal.scanner';
 import { TrendRadar } from './trend-radar';
 import { ContractSafetyScanner } from './contract-safety.scanner';
 import { GemResearchEngine } from './gem-research.engine';
+import { CoinGeckoScanner } from './coingecko.scanner';
+import { GeckoTerminalScanner } from './geckoterminal.scanner';
+import { DEXToolsScanner } from './dextools.scanner';
+import { WhaleTracker } from './whale-tracker';
 import { GemHuntController } from './gem-hunt.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -30,6 +34,10 @@ import { ScoringModule } from '../scoring/scoring.module';
     TrendRadar,
     ContractSafetyScanner,
     GemResearchEngine,
+    CoinGeckoScanner,
+    GeckoTerminalScanner,
+    DEXToolsScanner,
+    WhaleTracker,
   ],
   exports: [GemHuntService],
 })

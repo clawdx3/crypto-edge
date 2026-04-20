@@ -122,4 +122,47 @@ export class GemHuntScanner {
       return [];
     }
   }
+
+  /**
+   * Search DexScreener for pairs matching a symbol.
+   * Used by CoinGeckoScanner to find DEX pairs for trending coins.
+   */
+  async searchBySymbol(symbol: string, chain: string = 'solana'): Promise<DexScreenerToken[]> {
+    try {
+      const { data } = await axios.get(
+        `https://api.dexscreener.com/search?q=${encodeURIComponent(symbol)}&chain=${chain}`,
+        { timeout: 10_000 },
+      );
+
+      const pairs: any[] = data?.pairs ?? [];
+      return pairs
+        .filter((p) => {
+          const mc = parseFloat(p.baseToken?.marketCap ?? p.marketCap ?? '0');
+          const liq = parseFloat(p.liquidity ?? '0');
+          return mc > 0 && liq > 0;
+        })
+        .slice(0, 10)
+        .map((p) => ({
+          address: p.baseToken?.address ?? p.address ?? '',
+          chainId: chain,
+          dexId: p.dexId ?? 'unknown',
+          name: p.baseToken?.name ?? p.name ?? '',
+          symbol: p.baseToken?.symbol ?? p.symbol ?? '',
+          quoteTokenAddress: p.quoteToken?.address ?? '',
+          priceUsd: p.priceUsd ?? p.priceUsd ?? '0',
+          marketCap: p.baseToken?.marketCap ?? p.marketCap ?? '0',
+          fdv: p.fdv ?? '0',
+          liquidity: p.liquidity ?? '0',
+          volume24h: p.volume24h ?? '0',
+          priceChange: p.priceChange ?? { h24: '0' },
+          txns: p.txns ?? { h24: { buys: 0, sells: 0 } },
+          url: p.url ?? `https://dexscreener.com/${chain}/${p.baseToken?.address ?? p.address}`,
+          pairAddress: p.pairAddress ?? p.address ?? '',
+          holderCount: p.holderCount ?? '0',
+        })) as DexScreenerToken[];
+    } catch (err: any) {
+      this.logger.warn(`DexScreener symbol search failed for "${symbol}": ${err.message}`);
+      return [];
+    }
+  }
 }
