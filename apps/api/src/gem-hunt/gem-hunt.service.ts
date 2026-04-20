@@ -11,7 +11,6 @@ import { ContractSafetyScanner } from './contract-safety.scanner';
 import { GemResearchEngine } from './gem-research.engine';
 import { CoinGeckoScanner, TrendingCoinResult } from './coingecko.scanner';
 import { GeckoTerminalScanner } from './geckoterminal.scanner';
-import { DEXToolsScanner } from './dextools.scanner';
 import { WhaleTracker, WhaleTransfer } from './whale-tracker';
 
 @Injectable()
@@ -28,7 +27,6 @@ export class GemHuntService {
     private readonly researchEngine: GemResearchEngine,
     private readonly coinGeckoScanner: CoinGeckoScanner,
     private readonly geckoTerminalScanner: GeckoTerminalScanner,
-    private readonly dexToolsScanner: DEXToolsScanner,
     private readonly whaleTracker: WhaleTracker,
     private readonly telegramService: TelegramService,
   ) {}
@@ -107,24 +105,6 @@ export class GemHuntService {
       }
     } catch (err: any) {
       this.logger.warn(`GeckoTerminal scan error: ${err.message}`);
-    }
-  }
-
-  /** DEXTools announcement scan — runs every 5 minutes */
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async runDEXToolsScan() {
-    if (process.env['DEXTOOLS_ENABLED'] === 'false') return;
-    try {
-      const chain = 'solana';
-      const announcements = await this.dexToolsScanner.getNewAnnouncedTokens(chain, 20);
-      this.logger.log(`DEXTools: ${announcements.length} new announcements on ${chain}`);
-      for (const ann of announcements.slice(0, 5)) {
-        if ((ann.estimatedMC ?? 0) < 2_000_000) {
-          await this.processDEXToolsAnnouncement(ann);
-        }
-      }
-    } catch (err: any) {
-      this.logger.warn(`DEXTools scan error: ${err.message}`);
     }
   }
 
@@ -359,46 +339,6 @@ export class GemHuntService {
     }
   }
 
-  private async processDEXToolsAnnouncement(ann: any) {
-    // Build a synthetic token from announcement
-    const token: DexScreenerToken = {
-      address: ann.tokenAddress,
-      chainId: ann.chain,
-      dexId: 'dextools',
-      name: ann.tokenName ?? ann.tokenSymbol ?? '',
-      symbol: ann.tokenSymbol ?? '',
-      marketCap: ann.estimatedMC ? String(ann.estimatedMC) : '0',
-      liquidity: '0',
-      volume24h: '0',
-      priceUsd: ann.priceUSD ? String(ann.priceUSD) : '0',
-      priceChange: { h24: '0' },
-      pairAddress: ann.tokenAddress,
-    };
-
-    const chain = ann.chain;
-    const safetyReport = await this.safetyScanner.scan(ann.tokenAddress, chain);
-    const report = await this.researchEngine.generateReport({
-      token,
-      chain,
-      theme: {
-        theme: 'New Announcement',
-        description: `DEXTools announced: ${ann.tokenName ?? ann.tokenSymbol}`,
-        keywords: [ann.tokenSymbol ?? ''],
-        platforms: { twitter: 0, reddit: 0, telegram: 0 },
-        sentiment: 0.5,
-        momentum: 'rising' as const,
-        catalyst: 'DEXTools announcement',
-        tokensFound: [],
-      },
-      socialSignals: [],
-      safetyReport,
-    });
-
-    if (report.thesis === 'BUY' && (report.thesisStrength ?? 0) > 70) {
-      await this.sendDEXToolsAlert(ann, report);
-    }
-  }
-
   private async processWhaleBuy(buy: WhaleTransfer) {
     if (!buy.tokenAddress) return;
     const token: DexScreenerToken = {
@@ -463,22 +403,6 @@ export class GemHuntService {
       `🔗 https://dexscreener.com/${pool.network}/${pool.poolAddress}`,
       '',
       `💡 Thesis: ${report.thesisReasoning ?? 'New pool with fresh liquidity detected.'}`,
-      '',
-      `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
-    ].filter(Boolean);
-
-    await this.telegramService.sendMessage(lines.join('\n'));
-  }
-
-  private async sendDEXToolsAlert(ann: any, report: any) {
-    const lines = [
-      `🟠 *DEXTOOLS ANNOUNCEMENT — ${ann.tokenSymbol ?? ann.tokenName}*`,
-      '',
-      ann.estimatedMC ? `📊 Est. MC: $${this.fmtUsd(String(ann.estimatedMC))}` : '',
-      ann.priceUSD ? `💰 Price: $${parseFloat(ann.priceUSD).toFixed(6)}` : '',
-      ann.txHash ? `🔗 TX: https://dexscreener.com/${ann.chain}/${ann.txHash}` : '',
-      '',
-      `💡 Thesis: ${report.thesisReasoning ?? 'New token announced via DEXTools — dev is marketing.'}`,
       '',
       `⚠️ Risk: ${report.riskLevel ?? 'MEDIUM'} — do your own DD`,
     ].filter(Boolean);

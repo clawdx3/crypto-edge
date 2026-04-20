@@ -124,6 +124,44 @@ export class GemHuntScanner {
   }
 
   /**
+   * Get newest pairs from DexScreener (sorted by creation time, newest first).
+   * This replaces what DEXTools announcements gave us — real-time new pair detection.
+   * GET /latest/dex/pairs/{chain}
+   */
+  async getNewestPairs(chain: string = 'solana', limit: number = 50): Promise<DexScreenerToken[]> {
+    try {
+      const response = await axios.get(
+        `${this.dexScreenerBase}/latest/dex/pairs/${chain}`,
+        { timeout: 10_000 },
+      );
+      const pairs: any[] = response.data?.pairs ?? [];
+
+      // Return newest pairs (already sorted by creation time on DexScreener's end)
+      return pairs.slice(0, limit).map((p) => ({
+        address: p.baseToken?.address ?? p.address ?? '',
+        chainId: chain,
+        dexId: p.dexId ?? 'unknown',
+        name: p.baseToken?.name ?? p.name ?? '',
+        symbol: p.baseToken?.symbol ?? p.symbol ?? '',
+        quoteTokenAddress: p.quoteToken?.address ?? '',
+        priceUsd: p.priceUsd ?? '0',
+        marketCap: p.baseToken?.marketCap ?? p.marketCap ?? '0',
+        fdv: p.fdv ?? '0',
+        liquidity: p.liquidity ?? '0',
+        volume24h: p.volume24h ?? '0',
+        priceChange: p.priceChange ?? { h24: '0' },
+        txns: p.txns ?? { h24: { buys: 0, sells: 0 } },
+        url: p.url ?? `https://dexscreener.com/${chain}/${p.baseToken?.address ?? p.address}`,
+        pairAddress: p.pairAddress ?? p.address ?? '',
+        holderCount: p.holderCount ?? '0',
+      }));
+    } catch (err: any) {
+      this.logger.warn(`DexScreener getNewestPairs failed for ${chain}: ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
    * Search DexScreener for pairs matching a symbol.
    * Used by CoinGeckoScanner to find DEX pairs for trending coins.
    */

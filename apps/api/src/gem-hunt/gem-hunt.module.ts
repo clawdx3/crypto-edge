@@ -10,7 +10,6 @@ import { ContractSafetyScanner } from './contract-safety.scanner';
 import { GemResearchEngine } from './gem-research.engine';
 import { CoinGeckoScanner } from './coingecko.scanner';
 import { GeckoTerminalScanner } from './geckoterminal.scanner';
-import { DEXToolsScanner } from './dextools.scanner';
 import { WhaleTracker } from './whale-tracker';
 import { GemHuntController } from './gem-hunt.controller';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -36,7 +35,6 @@ import { ScoringModule } from '../scoring/scoring.module';
     GemResearchEngine,
     CoinGeckoScanner,
     GeckoTerminalScanner,
-    DEXToolsScanner,
     WhaleTracker,
   ],
   exports: [GemHuntService],

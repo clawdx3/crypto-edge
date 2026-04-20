@@ -425,19 +425,3 @@ model GeckoTerminalPool {
   @@index([network, detectedAt])
   @@index([volume24h])
 }
-
-// DEXTools Announcement — newly announced tokens (real-time pipeline)
-model DEXToolsAnnouncement {
-  id            String   @id @default(cuid())
-  chain         String
-  tokenAddress  String
-  tokenSymbol   String?
-  tokenName     String?
-  txHash        String?
-  priceUSD      Float?
-  estimatedMC   Float?
-  detectedAt    DateTime @default(now())
-
-  @@unique([chain, tokenAddress])
-  @@index([detectedAt])
-}

@@ -14,7 +14,6 @@ export interface GemResearchInput {
   // New signal sources
   coingeckoGem?: { signalStrength: number; upsidePotential: number };
   geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
-  dexToolsAnnouncement?: { estimatedMC: number };
   whaleBuy?: { walletName: string; amountUsd: number };
 }
 
@@ -68,7 +67,7 @@ export class GemResearchEngine {
    * Generate a full DD research report for a token.
    */
   async generateReport(input: GemResearchInput): Promise<TokenResearchReportOutput> {
-    const { token, chain, theme, socialSignals, safetyReport, coingeckoGem, geckoTerminalPool, dexToolsAnnouncement, whaleBuy } = input;
+    const { token, chain, theme, socialSignals, safetyReport, coingeckoGem, geckoTerminalPool, whaleBuy } = input;
 
     // Collect social signal data
     const twitterSignal = socialSignals.find((s) => s.platform === 'twitter');
@@ -98,7 +97,6 @@ export class GemResearchEngine {
     };
     if (coingeckoGem) thesisParams.coingeckoGem = coingeckoGem;
     if (geckoTerminalPool) thesisParams.geckoTerminalPool = geckoTerminalPool;
-    if (dexToolsAnnouncement) thesisParams.dexToolsAnnouncement = dexToolsAnnouncement;
     if (whaleBuy) thesisParams.whaleBuy = whaleBuy;
     const { thesis, strength, reasoning } = this.determineThesis(thesisParams);
 
@@ -282,14 +280,13 @@ export class GemResearchEngine {
     redditSignal: SocialSignalResult | undefined;
     coingeckoGem?: { signalStrength: number; upsidePotential: number };
     geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
-    dexToolsAnnouncement?: { estimatedMC: number };
     whaleBuy?: { walletName: string; amountUsd: number };
   }): { thesis: 'BUY' | 'HOLD' | 'AVOID'; strength: number; reasoning: string } {
     const {
       socialScore, safetyScore, onChainScore,
       combinedSentiment, avgEngagement, theme, token,
       safetyReport, twitterSignal, redditSignal,
-      coingeckoGem, geckoTerminalPool, dexToolsAnnouncement, whaleBuy,
+      coingeckoGem, geckoTerminalPool, whaleBuy,
     } = params;
 
     // Weighted composite score
@@ -306,11 +303,6 @@ export class GemResearchEngine {
     if (geckoTerminalPool) {
       if (geckoTerminalPool.isNew) composite += 8;
       if (geckoTerminalPool.liquidity > 50_000) composite += 7;
-    }
-    // DEXTools announcement = strong signal (dev is marketing)
-    if (dexToolsAnnouncement) {
-      composite += 10;
-      if (dexToolsAnnouncement.estimatedMC < 500_000) composite += 5; // early announcement
     }
     // Whale buy = very strong signal (smart money moving)
     if (whaleBuy) {
@@ -382,7 +374,6 @@ export class GemResearchEngine {
     redditSignal: SocialSignalResult | undefined;
     coingeckoGem?: { signalStrength: number; upsidePotential: number };
     geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
-    dexToolsAnnouncement?: { estimatedMC: number };
     whaleBuy?: { walletName: string; amountUsd: number };
   }): string {
     const lines: string[] = [];
@@ -423,7 +414,6 @@ export class GemResearchEngine {
     // New signal bonuses
     if (p.coingeckoGem) lines.push(`CoinGecko trending: CG signal ${p.coingeckoGem.signalStrength}/100, ${p.coingeckoGem.upsidePotential.toFixed(1)}x upside potential.`);
     if (p.geckoTerminalPool?.isNew) lines.push(`Fresh pool on GeckoTerminal with $${(p.geckoTerminalPool.liquidity / 1000).toFixed(0)}K liquidity.`);
-    if (p.dexToolsAnnouncement) lines.push(`Dev is marketing — new token announced on DEXTools (est. MC: $${((p.dexToolsAnnouncement.estimatedMC ?? 0) / 1000).toFixed(0)}K).`);
     if (p.whaleBuy) lines.push(`🐋 Whale signal: ${p.whaleBuy.walletName} bought $${(p.whaleBuy.amountUsd / 1000).toFixed(0)}K — smart money moving.`);
 
     if (lines.length === 0) {
@@ -445,7 +435,6 @@ export class GemResearchEngine {
     token: DexScreenerToken;
     coingeckoGem?: { signalStrength: number; upsidePotential: number };
     geckoTerminalPool?: { isNew: boolean; volume24h: number; liquidity: number };
-    dexToolsAnnouncement?: { estimatedMC: number };
     whaleBuy?: { walletName: string; amountUsd: number };
   }): string {
     const lines: string[] = [];
