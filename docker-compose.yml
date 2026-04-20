@@ -7,16 +7,17 @@ services:
     environment:
       POSTGRES_USER: crypto_edge
       POSTGRES_PASSWORD: crypto_edge_password
-      POSTGRES_DB: crypto_edge_dev
+      POSTGRES_DB: crypto_edge
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crypto_edge"]
+      test: ["CMD-SHELL", "pg_isready -U crypto_edge -d crypto_edge"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -30,6 +31,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  migration:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: crypto-edge-migration
+    command: pnpm prisma migrate deploy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://crypto_edge:crypto_edge_password@postgres:5432/crypto_edge
+    restart: "no"
 
   api:
     build:
@@ -37,15 +52,19 @@ services:
       dockerfile: Dockerfile
     container_name: crypto-edge-api
     environment:
-      DATABASE_URL: postgresql://crypto_edge:crypto_edge_password@postgres:5432/crypto_edge_dev
+      DATABASE_URL: postgresql://crypto_edge:crypto_edge_password@postgres:5432/crypto_edge
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
       NODE_ENV: production
       API_PORT: 3001
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
-      COINGECKO_API_KEY: ${COINGECKO_API_KEY}
-      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY}
+      GEM_HUNT_ENABLED: "true"
+      GEM_HUNT_CHAIN: solana
+      GEM_HUNT_SCRAPER_URL: http://gem-hunt-scraper:3002
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+      COINGECKO_API_KEY: "${COINGECKO_API_KEY}"
+      ETHERSCAN_API_KEY: "${ETHERSCAN_API_KEY}"
     ports:
       - "3001:3001"
     depends_on:
@@ -55,24 +74,35 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Optional: nestjs-console for migrations
-  # migration:
-  #   build: ./apps/api
-  #   depends_on: postgres: { condition: service_healthy }
-  #   command: pnpm prisma migrate deploy
-  #   environment:
-  #     DATABASE_URL: postgresql://crypto_edge:***@postgres:5432/crypto_edge_dev
-
-  gem-hunt-scraper:
-    build: ./apps/gem-hunt-scraper
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: crypto-edge-web
     environment:
-      - TWITTER_USERNAME=${TWITTER_USERNAME}
-      - TWITTER_PASSWORD=${TWITTER_PASSWORD}
-      - TWITTER_EMAIL=${TWITTER_EMAIL}
+      NODE_ENV: production
+      NUXT_PUBLIC_API_BASE_URL: http://localhost:3001/api
     ports:
-      - "3002:3002"
+      - "3000:3000"
     depends_on:
       - api
+    restart: unless-stopped
+
+  gem-hunt-scraper:
+    build:
+      context: ./apps/gem-hunt-scraper
+      dockerfile: Dockerfile
+    container_name: crypto-edge-gem-hunt-scraper
+    environment:
+      TWITTER_USERNAME: "${TWITTER_USERNAME}"
+      TWITTER_PASSWORD: "${TWITTER_PASSWORD}"
+      TWITTER_EMAIL: "${TWITTER_EMAIL}"
+      REDDIT_CLIENT_ID: "${REDDIT_CLIENT_ID}"
+      REDDIT_CLIENT_SECRET: "${REDDIT_CLIENT_SECRET}"
+      REDDIT_USERNAME: "${REDDIT_USERNAME}"
+      REDDIT_PASSWORD: "${REDDIT_PASSWORD}"
+    ports:
+      - "3002:3002"
     restart: unless-stopped
 
 volumes:

@@ -3,6 +3,7 @@ node_modules
 .env
 .env.*
 !.env.example
+!.env.docker
 coverage
 .turbo
 .nuxt
@@ -13,4 +14,12 @@ prisma/*.db
 prisma/*.db-journal
 apps/api/node_modules
 apps/web/node_modules
+apps/gem-hunt-scraper/__pycache__
+apps/gem-hunt-scraper/*.pyc
+apps/gem-hunt-scraper/.pytest_cache
 packages/shared/node_modules
+postgres_data
+redis_data
+*.egg-info
+.eggs
+build
