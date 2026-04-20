@@ -33,6 +33,24 @@ interface ScraperSearchResponse {
   sample_posts: Array<{ text: string; likes: number; rt: number; impressions: number; url: string }>;
 }
 
+interface RedditScraperResponse {
+  keyword: string;
+  post_count: number;
+  sentiment: number;
+  reach: number;
+  trending: boolean;
+  avg_engagement: number;
+  sample_posts: Array<{
+    title: string;
+    text: string;
+    score: number;
+    comments: number;
+    url: string;
+    subreddit: string;
+    created_hours_ago: number;
+  }>;
+}
+
 @Injectable()
 export class SocialSignalScanner {
   private readonly logger = new Logger(SocialSignalScanner.name);
@@ -63,6 +81,9 @@ export class SocialSignalScanner {
     'memecoins',
     'CryptoCurrency',
     'SatoshiBets',
+    'altcoin',
+    'cryptomarkets',
+    'DeFi',
   ];
 
   constructor(
@@ -120,7 +141,7 @@ export class SocialSignalScanner {
   }
 
   /**
-   * Search Reddit for keyword mentions.
+   * Search Reddit for keyword mentions via Python scraper service.
    */
   async searchReddit(keyword: string, subreddit?: string): Promise<SocialSignalResult> {
     const result: SocialSignalResult = {
@@ -135,50 +156,31 @@ export class SocialSignalScanner {
     };
 
     try {
-      // Reddit free JSON API
-      const targetSub = subreddit ?? 'CryptoMoonShots';
-      const url = `https://www.reddit.com/r/${targetSub}/search.json?q=${encodeURIComponent(keyword)}&sort=hot&limit=20&restrict_sr=1`;
+      const { data } = await axios.get<RedditScraperResponse>(
+        `${this.scraperUrl}/search/reddit/${encodeURIComponent(keyword)}`,
+        { timeout: 15_000 }
+      );
 
-      const { data } = await axios.get(url, {
-        headers: { 'User-Agent': 'crypto-edge-v1/1.0' },
-        timeout: 10_000,
-      });
+      result.postCount = data.post_count;
+      result.sentiment = data.sentiment;
+      result.reach = data.reach;
+      result.trending = data.trending;
+      result.avgEngagement = data.avg_engagement;
+      result.samplePosts = (data.sample_posts ?? []).map((p) => ({
+        text: p.title,
+        likes: p.score,
+        rt: p.comments,
+        url: p.url,
+      }));
 
-      const posts = data?.data?.children ?? [];
-      const postData: Array<{ text: string; likes: number; rt: number; url: string }> = [];
-      let totalSentiment = 0;
-
-      for (const { data: post } of posts) {
-        result.postCount++;
-        const score = post.score ?? 0;
-        const numComments = post.num_comments ?? 0;
-        result.reach += Number(score + numComments);
-        result.avgEngagement += score + numComments;
-
-        const text = (post.title ?? '').toLowerCase();
-        const positiveWords = ['gem', 'moon', 'rocket', 'call', 'win', 'best', 'huge'];
-        const negativeWords = ['scam', 'rug', 'dump', 'avoid', 'warning', 'rugpull'];
-        let s = 0;
-        for (const w of positiveWords) if (text.includes(w)) s += 0.2;
-        for (const w of negativeWords) if (text.includes(w)) s -= 0.2;
-        totalSentiment += Math.max(-1, Math.min(1, s));
-
-        postData.push({
-          text: post.title ?? '',
-          likes: score,
-          rt: numComments,
-          url: `https://reddit.com${post.permalink}`,
-        });
-      }
-
-      if (result.postCount > 0) {
-        result.sentiment = totalSentiment / result.postCount;
-        result.avgEngagement = result.avgEngagement / result.postCount;
-        result.samplePosts = postData.slice(0, 5);
-        result.trending = result.postCount >= 5 || result.avgEngagement > 50;
-      }
+      this.logger.debug(`Reddit search for "${keyword}": ${data.post_count} posts, sentiment: ${data.sentiment}`);
     } catch (err: any) {
-      this.logger.warn(`Reddit search failed for "${keyword}": ${err.message}`);
+      // Graceful degradation: log and return empty result if scraper unavailable
+      if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        this.logger.warn(`Scraper service unavailable at ${this.scraperUrl}, returning empty result for "${keyword}"`);
+      } else {
+        this.logger.warn(`Reddit search failed for "${keyword}": ${err.message}`);
+      }
     }
 
     return result;

@@ -1,10 +1,12 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import praw
 import twscrape
 
 @asynccontextmanager
@@ -25,9 +27,37 @@ async def lifespan(app: FastAPI):
     else:
         print("Twitter credentials not set, scraper will return empty results")
         app.state.api = None
+
+    # Initialize PRAW Reddit client
+    reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
+    reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    reddit_username = os.getenv("REDDIT_USERNAME")
+    reddit_password = os.getenv("REDDIT_PASSWORD")
+
+    if reddit_client_id and reddit_client_secret:
+        try:
+            reddit = praw.Reddit(
+                client_id=reddit_client_id,
+                client_secret=reddit_client_secret,
+                username=reddit_username or "",
+                password=reddit_password or "",
+                user_agent="GemHunter/1.0 (crypto gem detection)"
+            )
+            # Test the connection
+            reddit.user.me()
+            app.state.reddit = reddit
+            print(f"Reddit: logged in as {reddit_username}")
+        except Exception as e:
+            print(f"Reddit login failed: {e}")
+            app.state.reddit = None
+    else:
+        print("Reddit credentials not set, using unauthenticated (read-only)")
+        app.state.reddit = None
+
     yield
     # cleanup
     app.state.api = None
+    app.state.reddit = None
 
 app = FastAPI(title="Gem Hunt Scraper", lifespan=lifespan)
 app.add_middleware(
@@ -49,6 +79,24 @@ class SearchResponse(BaseModel):
     trending: bool
     avg_engagement: float
     sample_posts: list[TweetResult]
+
+class RedditPost(BaseModel):
+    title: str
+    text: str
+    score: int
+    comments: int
+    url: str
+    subreddit: str
+    created_hours_ago: int
+
+class RedditSearchResponse(BaseModel):
+    keyword: str
+    post_count: int
+    sentiment: float
+    reach: int  # sum of scores
+    trending: bool
+    avg_engagement: float
+    sample_posts: list[RedditPost]
 
 def simple_sentiment(text: str) -> float:
     """Very basic sentiment: positive - negative words normalized"""
@@ -128,6 +176,63 @@ async def search_twitter(keyword: str, limit: int = 20) -> SearchResponse:
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Twitter search failed: {str(e)}")
+
+@app.get("/search/reddit/{keyword}")
+async def search_reddit(keyword: str, limit: int = 20) -> RedditSearchResponse:
+    """
+    Search Reddit for keyword in crypto subreddits.
+    """
+    reddit = getattr(app.state, "reddit", None)
+    
+    result = RedditSearchResponse(
+        keyword=keyword,
+        post_count=0,
+        sentiment=0.0,
+        reach=0,
+        trending=False,
+        avg_engagement=0.0,
+        sample_posts=[]
+    )
+    
+    subreddits = ["CryptoMoonShots", "Solana", "memecoins", "CryptoCurrency", 
+                  "SatoshiBets", "altcoin", "cryptomarkets", "DeFi"]
+    
+    try:
+        posts_data = []
+        for subreddit_name in subreddits[:5]:  # limit to 5 subs per search
+            try:
+                sub = reddit.subreddit(subreddit_name)
+                for submission in sub.search(keyword, limit=min(limit, 10), sort="new"):
+                    age_hours = (datetime.now() - datetime.fromtimestamp(submission.created_utc)).days * 24
+                    age_hours += datetime.now().hour - datetime.fromtimestamp(submission.created_utc).hour
+                    posts_data.append({
+                        "title": submission.title,
+                        "text": submission.selftext[:500] if submission.selftext else "",
+                        "score": submission.score,
+                        "comments": submission.num_comments,
+                        "url": f"https://reddit.com{submission.permalink}",
+                        "subreddit": subreddit_name,
+                        "created_hours_ago": max(1, age_hours)
+                    })
+            except Exception:
+                continue
+        
+        if posts_data:
+            result.post_count = len(posts_data)
+            result.reach = sum(p["score"] for p in posts_data)
+            result.avg_engagement = round(sum(p["score"] + p["comments"] for p in posts_data) / len(posts_data), 1)
+            # Use same sentiment function
+            all_text = " ".join(p["title"] + " " + p["text"] for p in posts_data)
+            result.sentiment = simple_sentiment(all_text)
+            # Trending if > 10 posts in last 24h and avg engagement > 50
+            recent = [p for p in posts_data if p["created_hours_ago"] <= 24]
+            result.trending = len(recent) > 10 and result.avg_engagement > 50
+            result.sample_posts = sorted(posts_data, key=lambda x: x["score"], reverse=True)[:5]
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reddit search failed: {str(e)}")
 
 @app.get("/trending")
 async def get_trending():
