@@ -8,6 +8,7 @@ export interface EnvironmentConfig {
   TELEGRAM_CHAT_ID?: string;
   COINGECKO_API_KEY?: string;
   CORS_ORIGIN: string;
+  GEM_HUNT_SCRAPER_URL: string;
 }
 
 export default (): EnvironmentConfig => ({
@@ -22,4 +23,5 @@ export default (): EnvironmentConfig => ({
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   COINGECKO_API_KEY: process.env.COINGECKO_API_KEY,
   CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
+  GEM_HUNT_SCRAPER_URL: process.env.GEM_HUNT_SCRAPER_URL || 'http://localhost:3002',
 });

@@ -61,7 +61,19 @@ services:
   #   depends_on: postgres: { condition: service_healthy }
   #   command: pnpm prisma migrate deploy
   #   environment:
-  #     DATABASE_URL: postgresql://crypto_edge:crypto_edge_password@postgres:5432/crypto_edge_dev
+  #     DATABASE_URL: postgresql://crypto_edge:***@postgres:5432/crypto_edge_dev
+
+  gem-hunt-scraper:
+    build: ./apps/gem-hunt-scraper
+    environment:
+      - TWITTER_USERNAME=${TWITTER_USERNAME}
+      - TWITTER_PASSWORD=${TWITTER_PASSWORD}
+      - TWITTER_EMAIL=${TWITTER_EMAIL}
+    ports:
+      - "3002:3002"
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   postgres_data:

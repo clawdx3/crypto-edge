@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TwitterApi } from 'twitter-api-v2';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -24,10 +23,20 @@ export interface TrendingKeyword {
   trending: boolean;
 }
 
+interface ScraperSearchResponse {
+  keyword: string;
+  post_count: number;
+  sentiment: number;
+  reach: number;
+  trending: boolean;
+  avg_engagement: number;
+  sample_posts: Array<{ text: string; likes: number; rt: number; impressions: number; url: string }>;
+}
+
 @Injectable()
 export class SocialSignalScanner {
   private readonly logger = new Logger(SocialSignalScanner.name);
-  private twitterClient: TwitterApi | null = null;
+  private readonly scraperUrl: string;
 
   // Default crypto-themed keywords to scan
   private readonly defaultKeywords = [
@@ -60,37 +69,12 @@ export class SocialSignalScanner {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
   ) {
-    this.initTwitterClient();
-  }
-
-  private initTwitterClient() {
-    const bearerToken = this.configService.get<string>('TWITTER_BEARER_TOKEN');
-    const apiKey = this.configService.get<string>('TWITTER_API_KEY');
-    const apiSecret = this.configService.get<string>('TWITTER_API_SECRET');
-    const accessToken = this.configService.get<string>('TWITTER_ACCESS_TOKEN');
-    const accessSecret = this.configService.get<string>('TWITTER_ACCESS_SECRET');
-
-    if (bearerToken) {
-      // App-only or user context
-      this.twitterClient = new TwitterApi(bearerToken);
-      this.logger.log('Twitter client initialized (bearer token)');
-    } else if (apiKey && apiSecret && accessToken && accessSecret) {
-      this.twitterClient = new TwitterApi({
-        appKey: apiKey,
-        appSecret: apiSecret,
-        accessToken: accessToken,
-        accessSecret: accessSecret,
-      });
-      this.logger.log('Twitter client initialized (user context)');
-    } else {
-      this.logger.warn(
-        'Twitter credentials not configured. Set TWITTER_BEARER_TOKEN or TWITTER_API_KEY + related vars in .env',
-      );
-    }
+    this.scraperUrl = this.configService.get<string>('GEM_HUNT_SCRAPER_URL') || 'http://localhost:3002';
+    this.logger.log(`Using external scraper at: ${this.scraperUrl}`);
   }
 
   /**
-   * Search Twitter for a keyword and return signal data.
+   * Search Twitter for a keyword via Python scraper service.
    */
   async searchTwitter(keyword: string, maxResults = 20): Promise<SocialSignalResult> {
     const result: SocialSignalResult = {
@@ -104,55 +88,32 @@ export class SocialSignalScanner {
       samplePosts: [],
     };
 
-    if (!this.twitterClient) {
-      this.logger.debug(`Twitter not configured, skipping search for: ${keyword}`);
-      return result;
-    }
-
     try {
-      const rw = this.twitterClient.readOnly;
-      const paginator = await rw.search(keyword, { max_results: Math.min(maxResults, 20) });
-      const tweetsData = paginator.tweets ?? [];
+      const { data } = await axios.get<ScraperSearchResponse>(
+        `${this.scraperUrl}/search/${encodeURIComponent(keyword)}`,
+        { params: { limit: maxResults }, timeout: 15_000 }
+      );
 
-      const posts: Array<{ text: string; likes: number; rt: number; url: string }> = [];
-      let totalSentiment = 0;
-      let totalEngagement = 0;
+      result.postCount = data.post_count;
+      result.sentiment = data.sentiment;
+      result.reach = data.reach;
+      result.trending = data.trending;
+      result.avgEngagement = data.avg_engagement;
+      result.samplePosts = (data.sample_posts ?? []).map((p) => ({
+        text: p.text,
+        likes: p.likes,
+        rt: p.rt,
+        url: p.url,
+      }));
 
-      for (const tweet of tweetsData) {
-        result.postCount++;
-        result.reach += Number(BigInt(tweet.public_metrics?.impression_count ?? 0));
-
-        const likes = tweet.public_metrics?.like_count ?? 0;
-        const rt = tweet.public_metrics?.retweet_count ?? 0;
-        const engagement = likes + rt * 2;
-        totalEngagement += engagement;
-
-        // Simple sentiment: check for positive/negative keywords
-        const text = (tweet.text ?? '').toLowerCase();
-        const positiveWords = ['gem', 'moon', 'rocket', 'pump', 'win', 'buy', 'call', 'long', '100x', 'gain'];
-        const negativeWords = ['scam', 'rug', 'dump', 'sell', 'avoid', 'rugpull', 'honeypot', 'shitcoin'];
-        let s = 0;
-        for (const w of positiveWords) if (text.includes(w)) s += 0.2;
-        for (const w of negativeWords) if (text.includes(w)) s -= 0.2;
-        totalSentiment += Math.max(-1, Math.min(1, s));
-
-        posts.push({
-          text: tweet.text?.substring(0, 280) ?? '',
-          likes,
-          rt,
-          url: `https://twitter.com/i/web/status/${tweet.id}`,
-        });
-      }
-
-      if (result.postCount > 0) {
-        result.sentiment = totalSentiment / result.postCount;
-        result.avgEngagement = totalEngagement / result.postCount;
-        result.samplePosts = posts.slice(0, 5);
-        // Trending if >10 posts in last batch or high avg engagement
-        result.trending = result.postCount >= 10 || result.avgEngagement > 100;
-      }
+      this.logger.debug(`Twitter search for "${keyword}": ${data.post_count} posts, sentiment: ${data.sentiment}`);
     } catch (err: any) {
-      this.logger.warn(`Twitter search failed for "${keyword}": ${err.message}`);
+      // Graceful degradation: log and return empty result if scraper unavailable
+      if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        this.logger.warn(`Scraper service unavailable at ${this.scraperUrl}, returning empty result for "${keyword}"`);
+      } else {
+        this.logger.warn(`Twitter search failed for "${keyword}": ${err.message}`);
+      }
     }
 
     return result;
