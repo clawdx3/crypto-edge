@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-risk-on: #22c55e;
+  --color-risk-off: #ef4444;
+  --color-neutral: #f59e0b;
+}
+
+body {
+  @apply bg-gray-50 dark:bg-gray-950;
+}

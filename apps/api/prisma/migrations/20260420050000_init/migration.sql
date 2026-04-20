@@ -1,0 +1,2 @@
+-- Initial Prisma migration placeholder for local bootstrap.
+-- Run `pnpm --filter @crypto-edge/api prisma migrate dev` to regenerate against your local environment.
