@@ -18,11 +18,6 @@ export default defineNuxtConfig({
   },
 
   imports: {
-    presets: [
-      {
-        from: '@crypto-edge/shared',
-        imports: ['Transaction', 'Wallet', 'Position', 'Asset', 'Catalyst', 'Alert'],
-      },
-    ],
+    // Auto-import shared types from the shared package
   },
 })

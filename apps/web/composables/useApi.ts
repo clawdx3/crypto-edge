@@ -1,6 +1,7 @@
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.publicApiBase || ''
+  // In Nuxt 3, runtimeConfig.public values are under config.public
+  const baseUrl = (config.public as Record<string, string>).publicApiBase || ''
 
   const fetchJson = async <T>(path: string, options?: any): Promise<T> => {
     return $fetch<T>(`${baseUrl}/api${path}`, options)

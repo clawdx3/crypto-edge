@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { PositionsController } from './positions.controller';
 import { PositionsService } from './positions.service';
+import { PositionScheduler } from './position-scheduler';
 
 @Module({
   imports: [
@@ -10,6 +11,6 @@ import { PositionsService } from './positions.service';
     }),
   ],
   controllers: [PositionsController],
-  providers: [PositionsService],
+  providers: [PositionsService, PositionScheduler],
 })
 export class PositionsModule {}
