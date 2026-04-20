@@ -28,7 +28,8 @@
     "class-validator": "0.14.2",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "swagger-ui-express": "5.0.1"
+    "swagger-ui-express": "5.0.1",
+    "twitter-api-v2": "^1.29.0"
   },
   "devDependencies": {
     "@nestjs/cli": "11.0.7",

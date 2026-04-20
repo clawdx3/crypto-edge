@@ -55,7 +55,7 @@ export class GemHuntScanner {
 
         return true;
       });
-    } catch (err) {
+    } catch (err: any) {
       this.logger.warn(`DexScreener scan failed for ${chain}: ${err.message}`);
       return [];
     }

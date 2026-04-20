@@ -236,7 +236,7 @@ model GemHuntConfig {
   id                  String   @id @default(cuid())
   name                String
   minMarketCapUsd     Float    @default(1000)
-  maxMarketCapUsd     Float    @default(5_000_000)
+  maxMarketCapUsd     Float    @default(5000000)
   minLiquidityUsd     Float    @default(5000)
   minVolume24h        Float    @default(10000)
   minHolders          Int      @default(10)
@@ -246,6 +246,97 @@ model GemHuntConfig {
   isActive            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+// Social Signal — tracks what social media is buzzing about
+model SocialSignal {
+  id             String    @id @default(cuid())
+  keyword        String    // e.g., "AI+meme", "Trump coin", "dogecoin"
+  platform       String    // twitter | reddit | telegram
+  postCount      Int       @default(0)
+  sentiment      Float     @default(0)  // -1 to 1
+  reach          BigInt    @default(0)  // total impressions
+  trending       Boolean   @default(false)
+  avgEngagement  Float     @default(0)
+  samplePosts    Json?     // [{text, likes, rt, url}]
+  discoveredAt   DateTime  @default(now())
+  lastScrapedAt  DateTime  @updatedAt
+
+  @@index([keyword, platform])
+  @@index([trending, discoveredAt])
+}
+
+// Token Research Report — full DD report
+model TokenResearchReport {
+  id              String   @id @default(cuid())
+  tokenAddress    String
+  chain           String
+  tokenName       String?
+  signalSource    String?  // what social triggered this
+  signalText      String?  // the tweet/post that triggered
+
+  // Contract Safety
+  mintAuthority   Boolean?
+  freezeAuthority Boolean?
+  lpBurningStatus String?  // "burned" | "locked" | "unlocked" | "unknown"
+  lpAmount        String?
+  lpLockDuration  String?
+  renounced       Boolean?
+  isHoneypot      Boolean?
+  isProxy         Boolean?
+  proxyAddress    String?
+  rugScore        Int?     @default(0)  // 0-100, higher = safer
+
+  // Social Presence
+  twitterHandle   String?
+  twitterFollowers Int?
+  twitterBio      String?
+  redditSubreddit String?
+  redditMembers   Int?
+  telegramGroup   String?
+  telegramMembers Int?
+  website         String?
+
+  // Team
+  teamDoxxed      Boolean @default(false)
+  teamNames       Json?   // [{name, role, link}]
+  teamPrevTokens  Json?   // [{token, rugDate, url}]
+
+  // Overall thesis
+  thesis          String?  // "BUY" | "HOLD" | "AVOID"
+  thesisStrength  Int?    // 0-100 how strong the thesis is
+  thesisReasoning String? // multi-line reasoning
+  riskLevel       String? // "LOW" | "MEDIUM" | "HIGH" | "EXTREME"
+
+  // On-chain from DexScreener
+  marketCap       String?
+  liquidity       String?
+  volume24h       String?
+  price           String?
+  priceChange24h  String?
+  pairAddress     String?
+  dexId           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tokenAddress, chain])
+}
+
+// Trending Theme — detected trend before specific tokens
+model TrendingTheme {
+  id          String   @id @default(cuid())
+  theme       String   // e.g., "AI agents", "political meme coins", "DePIN"
+  description String?
+  keywords    Json     // ["ai16z", "AI agent", "autonomous"]
+  platforms   Json     // {twitter: 150, reddit: 80, telegram: 40}
+  sentiment   Float    @default(0)
+  momentum    String   // "rising" | "peak" | "fading"
+  catalyst    String?  // "Elon tweet", "news article", "protocol launch"
+  detectedAt  DateTime @default(now())
+  tokensFound Json?    // [{address, name, chain}]
+
+  @@index([momentum, detectedAt])
 }
 
 // Discovered Gems

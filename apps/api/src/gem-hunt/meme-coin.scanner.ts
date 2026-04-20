@@ -35,7 +35,7 @@ export class MemeCoinScanner {
           .slice(0, 10);
 
         allGems.push(...memes.map((p: any) => ({ ...p, chain })));
-      } catch (err) {
+      } catch (err: any) {
         this.logger.warn(`Meme scan failed for ${chain}: ${err.message}`);
       }
     }
