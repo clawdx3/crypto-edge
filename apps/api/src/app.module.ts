@@ -15,6 +15,7 @@ import { ScoringModule } from './scoring/scoring.module';
 import { SourcesModule } from './sources/sources.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { WalletsModule } from './wallets/wallets.module';
+import { GemHuntModule } from './gem-hunt/gem-hunt.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WalletsModule } from './wallets/wallets.module';
     AlertsModule,
     TelegramModule,
     OverviewModule,
+    GemHuntModule,
   ],
 })
 export class AppModule {}
