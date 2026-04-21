@@ -12,6 +12,7 @@ import { CoinGeckoScanner } from './coingecko.scanner';
 import { GeckoTerminalScanner } from './geckoterminal.scanner';
 import { WhaleTracker } from './whale-tracker';
 import { GemHuntController } from './gem-hunt.controller';
+import { GemPerformanceService } from './gem-performance.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { ScoringModule } from '../scoring/scoring.module';
@@ -36,7 +37,8 @@ import { ScoringModule } from '../scoring/scoring.module';
     CoinGeckoScanner,
     GeckoTerminalScanner,
     WhaleTracker,
+    GemPerformanceService,
   ],
-  exports: [GemHuntService],
+  exports: [GemHuntService, GemPerformanceService],
 })
 export class GemHuntModule {}

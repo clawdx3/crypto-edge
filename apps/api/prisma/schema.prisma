@@ -308,7 +308,7 @@ model TokenResearchReport {
   thesisReasoning String? // multi-line reasoning
   riskLevel       String? // "LOW" | "MEDIUM" | "HIGH" | "EXTREME"
 
-  // On-chain from DexScreener
+  // On-chain from DexScreener (mutable — updated on rescans)
   marketCap       String?
   liquidity       String?
   volume24h       String?
@@ -317,10 +317,35 @@ model TokenResearchReport {
   pairAddress     String?
   dexId           String?
 
+  // Moment-of-detection snapshot (immutable)
+  detectedAt      DateTime @default(now())
+  detectedPrice   String?
+  detectedMarketCap String?
+  detectedLiquidity String?
+  detectedVolume24h String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@unique([tokenAddress, chain])
+}
+
+// Gem Performance Snapshot — periodic price/MCP snapshots for ROI tracking
+model GemPerformanceSnapshot {
+  id            String   @id @default(cuid())
+  gemId         String
+  tokenAddress  String
+  chain         String
+  snapshotAt    DateTime @default(now())
+  priceUsd        Float?
+  marketCapUsd    Float?
+  liquidityUsd    Float?
+  volume24h       Float?
+  roiPct          Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([tokenAddress, snapshotAt])
 }
 
 // Trending Theme — detected trend before specific tokens
@@ -405,6 +430,49 @@ model CoinGeckoGem {
   detectedAt      DateTime @default(now())
 
   @@index([upsidePotential])
+}
+
+// ShadowWallet — track OTHER wallets (smart money)
+model ShadowWallet {
+  id          String   @id @default(cuid())
+  address     String
+  label       String
+  chain       String   @default("ethereum")
+  alias       String?
+  category    String   @default("unknown")
+  winRate     Float    @default(0)
+  avgRoi30d   Float    @default(0)
+  totalTrades Int      @default(0)
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  positions   ShadowPosition[]
+
+  @@unique([address, chain])
+  @@index([chain, isActive])
+}
+
+// ShadowPosition — token holdings derived from scanning a ShadowWallet
+model ShadowPosition {
+  id              String   @id @default(cuid())
+  shadowWalletId  String
+  shadowWallet    ShadowWallet @relation(fields: [shadowWalletId], references: [id], onDelete: Cascade)
+  tokenAddress    String
+  tokenSymbol     String
+  chain           String   @default("ethereum")
+  entryPrice      Float?
+  currentPrice    Float?
+  amountHolding   Float?
+  usdValue        Float?
+  status          String   @default("active")
+  firstSeenAt     DateTime @default(now())
+  lastUpdatedAt   DateTime @updatedAt
+  isNew           Boolean  @default(true)
+  notes           String?
+
+  @@index([shadowWalletId, tokenAddress])
 }
 
 // GeckoTerminal Pool — fresh liquidity events

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Query, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { GemHuntService } from './gem-hunt.service';
+import { GemPerformanceService } from './gem-performance.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('gem-hunt')
@@ -8,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class GemHuntController {
   constructor(
     private readonly gemHuntService: GemHuntService,
+    private readonly gemPerformanceService: GemPerformanceService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -149,5 +151,11 @@ export class GemHuntController {
       orderBy: { thesisStrength: 'desc' },
       take: limit ? parseInt(limit, 10) : 20,
     });
+  }
+
+  @Get('performance')
+  @ApiOperation({ summary: 'Get current gem ROI tracking summary' })
+  async getPerformanceSummary() {
+    return this.gemPerformanceService.getPerformanceSummary();
   }
 }

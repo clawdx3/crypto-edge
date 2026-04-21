@@ -16,6 +16,7 @@ import { SourcesModule } from './sources/sources.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { GemHuntModule } from './gem-hunt/gem-hunt.module';
+import { ShadowWalletsModule } from './shadow-wallets/shadow-wallets.module';
 
 @Module({
   imports: [
@@ -35,6 +36,8 @@ import { GemHuntModule } from './gem-hunt/gem-hunt.module';
     TelegramModule,
     OverviewModule,
     GemHuntModule,
+    ShadowWalletsModule,
   ],
 })
 export class AppModule {}
+

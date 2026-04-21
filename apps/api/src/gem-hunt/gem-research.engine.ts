@@ -55,6 +55,12 @@ export interface TokenResearchReportOutput {
   priceChange24h: string | null;
   pairAddress: string | null;
   dexId: string | null;
+  // Detection-time snapshot fields
+  detectedAt: Date | null;
+  detectedPrice: string | null;
+  detectedMarketCap: string | null;
+  detectedLiquidity: string | null;
+  detectedVolume24h: string | null;
 }
 
 @Injectable()
@@ -156,6 +162,13 @@ export class GemResearchEngine {
       priceChange24h: token.priceChange?.h24 ?? null,
       pairAddress: token.pairAddress ?? null,
       dexId: token.dexId ?? null,
+
+      // Detection-time snapshot (immutable)
+      detectedAt: new Date(),
+      detectedPrice: token.priceUsd ?? null,
+      detectedMarketCap: token.marketCap ?? null,
+      detectedLiquidity: token.liquidity ?? null,
+      detectedVolume24h: token.volume24h ?? null,
     };
 
     // Store report in DB
@@ -572,6 +585,12 @@ export class GemResearchEngine {
           priceChange24h: report.priceChange24h,
           pairAddress: report.pairAddress,
           dexId: report.dexId,
+          // Detection-time snapshot (immutable) — only set on creation
+          detectedAt: report.detectedAt ?? new Date(),
+          detectedPrice: report.detectedPrice,
+          detectedMarketCap: report.detectedMarketCap,
+          detectedLiquidity: report.detectedLiquidity,
+          detectedVolume24h: report.detectedVolume24h,
         },
       });
     } catch (err: any) {
