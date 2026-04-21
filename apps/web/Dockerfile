@@ -1,27 +1,21 @@
-# Stage 1: Builder
+# syntax=docker/dockerfile:1.7
 FROM node:20-alpine AS builder
-
+RUN npm install -g pnpm
 WORKDIR /app
-
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
-
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/web/package.json apps/web/
+RUN pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm run build
+RUN cd packages/shared && pnpm build
+RUN cd apps/web && npx nuxt prepare && npx nuxt build
 
-# Stage 2: Runtime
-FROM node:20-alpine AS runtime
-
+FROM node:20-alpine AS prod
 WORKDIR /app
-
 ENV NODE_ENV=production
+COPY --from=builder /app/apps/web/.output /app/.output
+COPY --from=builder /app/apps/web/package.json /app/package.json
 ENV PORT=3000
 ENV HOST=0.0.0.0
-
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
 EXPOSE 3000
-
 CMD ["node", ".output/server/index.mjs"]

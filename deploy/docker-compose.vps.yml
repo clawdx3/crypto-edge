@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  api:
+    image: crypto-edge-api:latest
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: prod
+    container_name: crypto-edge-api
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    env_file:
+      - .env.vps
+    ports:
+      - "127.0.0.1:3101:3001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - shared
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  web:
+    image: crypto-edge-web:latest
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      target: prod
+    container_name: crypto-edge-web
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    env_file:
+      - .env.vps
+    ports:
+      - "127.0.0.1:3100:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - shared
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  shared:
+    external: true
+    name: vps-app-stack_internal

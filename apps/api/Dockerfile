@@ -1,38 +1,20 @@
-# Stage 1: Builder
+# syntax=docker/dockerfile:1.7
 FROM node:20-alpine AS builder
-
-# Install pnpm
 RUN npm install -g pnpm
-
 WORKDIR /app
-
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
-
-# Install dependencies
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile
-
-# Copy source code
 COPY . .
+RUN cd packages/shared && pnpm build
+RUN cd apps/api && npx prisma generate && pnpm build
+RUN pnpm deploy --filter=@crypto-edge/api --prod /tmp/deploy-api
 
-# Build the application
-RUN pnpm run build
-
-# Stage 2: Runtime
-FROM node:20-alpine AS runtime
-
+FROM node:20-alpine AS prod
 WORKDIR /app
-
-# Copy only the built output from stage 1
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
-# Set production environment
 ENV NODE_ENV=production
-
-# Expose port
-EXPOSE 3000
-
-# Start the application
-CMD ["node", "dist/main"]
+COPY --from=builder /tmp/deploy-api /app
+RUN npm install -g prisma@6.6.0 && npx prisma generate
+EXPOSE 3001
+CMD ["node", "dist/main.js"]
