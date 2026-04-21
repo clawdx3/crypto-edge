@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@crypto-edge/shared": "workspace:*",
-    "@nuxt/ui": "3.3.7",
+    "@nuxt/ui": "2.21.1",
     "@pinia/nuxt": "0.10.1",
     "nuxt": "3.16.0",
     "pinia": "3.0.1",
