@@ -9,8 +9,10 @@ export interface WalletTx {
   to: string;
   value: string;       // in ETH
   timestamp: number;
+  timeStamp?: number;  // raw Etherscan response
   gasUsed: string;
   isError: string;
+  methodId?: string;   // raw Etherscan response
 }
 
 export interface ParsedWalletEvent {

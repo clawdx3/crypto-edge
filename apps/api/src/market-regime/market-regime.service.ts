@@ -1,3 +1,4 @@
+import { RegimeLabel } from '@crypto-edge/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketRegimeResponseDto } from './dto/market-regime-response.dto';
@@ -16,13 +17,24 @@ export class MarketRegimeService {
       return {
         id: 'pending',
         capturedAt: new Date().toISOString(),
-        label: 'neutral' as const,
+        label: RegimeLabel.NEUTRAL,
         totalScore: 0,
         notes: 'No regime snapshot available yet. Ingestion pipeline pending.',
       };
     }
 
-    return snapshot as MarketRegimeResponseDto;
+    return {
+      ...snapshot,
+      capturedAt: snapshot.capturedAt.toISOString(),
+      label: snapshot.label as RegimeLabel,
+    };
+  }
+
+  private mapToDto(s: any): MarketRegimeResponseDto {
+    return {
+      ...s,
+      capturedAt: s.capturedAt.toISOString(),
+    };
   }
 
   async getHistory(pagination: PaginationQueryDto): Promise<{ data: MarketRegimeResponseDto[]; total: number }> {
@@ -39,7 +51,7 @@ export class MarketRegimeService {
     ]);
 
     return {
-      data: snapshots as MarketRegimeResponseDto[],
+      data: snapshots.map((s: any) => this.mapToDto(s)),
       total,
     };
   }

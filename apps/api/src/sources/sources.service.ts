@@ -3,13 +3,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateSourceDto } from './dto/create-source.dto';
 import { UpdateSourceDto } from './dto/update-source.dto';
 import { Source } from './entities/source.entity';
+import { SourceKind } from '@crypto-edge/shared';
+
+function toSource(raw: any): Source {
+  return { ...raw, kind: raw.kind as SourceKind } as Source;
+}
 
 @Injectable()
 export class SourcesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(): Promise<Source[]> {
-    return this.prisma.source.findMany({ orderBy: { name: 'asc' } });
+    const sources = await this.prisma.source.findMany({ orderBy: { name: 'asc' } });
+    return sources.map(toSource);
   }
 
   async findOne(id: string): Promise<Source> {
@@ -17,11 +23,11 @@ export class SourcesService {
     if (!source) {
       throw new NotFoundException(`Source with id ${id} not found`);
     }
-    return source;
+    return toSource(source);
   }
 
   async create(dto: CreateSourceDto): Promise<Source> {
-    return this.prisma.source.create({
+    const source = await this.prisma.source.create({
       data: {
         name: dto.name,
         kind: dto.kind,
@@ -30,6 +36,7 @@ export class SourcesService {
         rateLimitPerMin: dto.rateLimitPerMin ?? 60,
       },
     });
+    return toSource(source);
   }
 
   async update(id: string, dto: UpdateSourceDto): Promise<Source> {
@@ -37,7 +44,7 @@ export class SourcesService {
       where: { id },
       data: dto,
     });
-    return source;
+    return toSource(source);
   }
 
   async remove(id: string): Promise<void> {

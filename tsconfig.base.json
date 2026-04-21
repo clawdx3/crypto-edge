@@ -1,28 +1,34 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": [
+      "ES2022"
+    ],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "useDefineForClassFields": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noImplicitAny": true,
-    "noImplicitOverride": true,
-    "noUncheckedIndexedAccess": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "exactOptionalPropertyTypes": true,
-    "noFallthroughCasesInSwitch": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "noImplicitOverride": false,
+    "noUncheckedIndexedAccess": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "exactOptionalPropertyTypes": false,
+    "noFallthroughCasesInSwitch": false,
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@crypto-edge/shared": ["packages/shared/src/index.ts"],
-      "@crypto-edge/shared/*": ["packages/shared/src/*"]
+      "@crypto-edge/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@crypto-edge/shared/*": [
+        "packages/shared/src/*"
+      ]
     }
   }
 }

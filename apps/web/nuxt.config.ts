@@ -6,7 +6,10 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/ui',
     '@pinia/nuxt',
-    '@tanstack/vue-query',
+  ],
+
+  plugins: [
+    '~/plugins/vue-query.client.ts',
   ],
 
   css: ['~/assets/css/main.css'],
@@ -15,9 +18,5 @@ export default defineNuxtConfig({
     public: {
       publicApiBase: process.env.NUXT_PUBLIC_API_BASE_URL || '',
     },
-  },
-
-  imports: {
-    // Auto-import shared types from the shared package
   },
 })

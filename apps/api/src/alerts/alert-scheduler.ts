@@ -32,7 +32,7 @@ export class AlertScheduler {
           take: 5,
           include: { asset: true },
         }),
-        this.prisma.position.findMany({ where: { status: 'open' } }),
+        this.prisma.position.findMany({ where: { status: 'open' } , include: { asset: true } }),
         this.prisma.alert.findMany({ where: { status: 'sent' }, orderBy: { sentAt: 'desc' }, take: 5 }),
       ]);
 
@@ -93,6 +93,7 @@ export class AlertScheduler {
               lt: new Date(new Date().setHours(23, 59, 59, 999)),
             },
           },
+          include: { asset: true },
         }),
         this.prisma.position.findMany({
           where: {
@@ -102,6 +103,7 @@ export class AlertScheduler {
               { nextReviewAt: null },
             ],
           },
+          include: { asset: true },
         }),
       ]);
 

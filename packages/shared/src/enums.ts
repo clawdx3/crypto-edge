@@ -53,6 +53,13 @@ export enum AlertType {
   RISK = 'risk',
 }
 
+export enum AlertStatus {
+  PENDING = 'pending',
+  SENT = 'sent',
+  DISMISSED = 'dismissed',
+  RESOLVED = 'resolved',
+}
+
 export enum AlertSeverity {
   INFO = 'info',
   WARNING = 'warning',

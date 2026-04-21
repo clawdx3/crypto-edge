@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsEnum, IsOptional } from 'class-validator';
 import { AlertSeverity, AlertType } from '@crypto-edge/shared';
 

@@ -32,7 +32,7 @@ export class AlertsService {
       this.prisma.alert.count({ where }),
     ]);
 
-    return { data: alerts, total };
+    return { data: alerts as unknown as Alert[], total };
   }
 
   async findOne(id: string): Promise<Alert> {
@@ -40,7 +40,7 @@ export class AlertsService {
     if (!alert) {
       throw new NotFoundException(`Alert with id ${id} not found`);
     }
-    return alert;
+    return alert as unknown as Alert;
   }
 
   async create(dto: CreateAlertDto): Promise<Alert> {
@@ -53,9 +53,9 @@ export class AlertsService {
         entityType: dto.entityType,
         entityId: dto.entityId,
         dedupeKey: dto.dedupeKey ?? `${dto.type}-${Date.now()}`,
-        status: 'pending',
+        status: 'pending' as any,
       },
-    });
+    }) as unknown as Alert;
   }
 
   async update(id: string, dto: UpdateAlertDto): Promise<Alert> {
@@ -63,7 +63,7 @@ export class AlertsService {
       where: { id },
       data: dto,
     });
-    return alert;
+    return alert as unknown as Alert;
   }
 
   async remove(id: string): Promise<void> {

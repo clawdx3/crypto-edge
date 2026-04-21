@@ -1,4 +1,4 @@
-import { Processor, WorkerHost, Inject } from '@nestjs/common';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { ScoringService } from './scoring.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -27,8 +27,20 @@ export class ScoringProcessor extends WorkerHost {
     super();
   }
 
-  // Job: recalculate-catalyst-rank
-  @Process('recalculate-catalyst-rank')
+  async process(job: Job): Promise<any> {
+    switch (job.name) {
+      case 'recalculate-catalyst-rank':
+        return this.handleRecalculateCatalystRank(job as Job<RecalculateCatalystJob>);
+      case 'recalculate-wallet-score':
+        return this.handleRecalculateWalletScore(job as Job<RecalculateWalletJob>);
+      case 'recalculate-position-risk':
+        return this.handleRecalculatePositionRisk(job as Job<RecalculatePositionRiskJob>);
+      default:
+        this.logger.warn(`Unknown job name: ${job.name}`);
+        return { error: `Unknown job name: ${job.name}` };
+    }
+  }
+
   async handleRecalculateCatalystRank(job: Job<RecalculateCatalystJob>) {
     this.logger.log(`Processing recalculate-catalyst-rank job for catalyst: ${job.data.catalystId}`);
 
@@ -41,7 +53,6 @@ export class ScoringProcessor extends WorkerHost {
       return { catalystId: job.data.catalystId, newRankScore: 0, error: 'Catalyst not found' };
     }
 
-    // Calculate days until effective
     let daysUntilEffective: number | undefined;
     if (catalyst.effectiveAt) {
       const now = new Date();
@@ -65,8 +76,6 @@ export class ScoringProcessor extends WorkerHost {
     return { catalystId: job.data.catalystId, newRankScore };
   }
 
-  // Job: recalculate-wallet-score
-  @Process('recalculate-wallet-score')
   async handleRecalculateWalletScore(job: Job<RecalculateWalletJob>) {
     this.logger.log(`Processing recalculate-wallet-score job for wallet: ${job.data.walletId}`);
 
@@ -80,7 +89,6 @@ export class ScoringProcessor extends WorkerHost {
       return { walletId: job.data.walletId, error: 'Wallet not found' };
     }
 
-    // Compute wallet metrics from events
     const events = wallet.events;
     let totalPnl = 0;
     let winCount = 0;
@@ -88,26 +96,23 @@ export class ScoringProcessor extends WorkerHost {
     const specializationSet = new Set<string>();
 
     if (events.length > 0) {
-      // Calculate P&L from usdValue changes
       const firstEvent = events[events.length - 1];
       const lastEvent = events[0];
       totalPnl = (lastEvent.usdValue ?? 0) - (firstEvent.usdValue ?? 0);
 
-      // Estimate win rate based on event types
-      const profitableEvents = events.filter(e => 
+      const profitableEvents = events.filter(e =>
         e.eventType === 'sell' || e.eventType === 'close' || e.eventType === 'take_profit'
       );
       winCount = profitableEvents.length;
       totalTrades = events.length;
 
-      // Extract specializations from event summaries or types
       events.forEach(e => {
         if (e.summary) {
           const defiMatch = e.summary.match(/defi|swap|liquidity|decentralized/i);
           const layer2Match = e.summary.match(/layer[_-]?2|l2|arbitrum|optimism|polygon/i);
           const nftMatch = e.summary.match(/nft|collection|mint/i);
           const yieldMatch = e.summary.match(/yield|farm|stake/i);
-          
+
           if (defiMatch) specializationSet.add('defi');
           if (layer2Match) specializationSet.add('layer2');
           if (nftMatch) specializationSet.add('nft');
@@ -122,14 +127,13 @@ export class ScoringProcessor extends WorkerHost {
 
     const winRate = totalTrades > 0 ? winCount / totalTrades : 0.5;
 
-    // Calculate average holding period
     let avgHoldingPeriodDays = 7;
     if (events.length >= 2) {
       const timestamps = events
         .filter(e => e.blockTimestamp)
         .map(e => new Date(e.blockTimestamp!).getTime())
         .sort((a, b) => a - b);
-      
+
       if (timestamps.length >= 2) {
         const totalHoldingMs = timestamps[timestamps.length - 1] - timestamps[0];
         avgHoldingPeriodDays = totalHoldingMs / (1000 * 60 * 60 * 24);
@@ -143,13 +147,12 @@ export class ScoringProcessor extends WorkerHost {
       specialization: Array.from(specializationSet),
     });
 
-    // Save WalletScore record
     await this.prisma.walletScore.create({
       data: {
         walletId: wallet.id,
         winRateScore: scoreResult.breakdown.winRateScore,
         timingScore: scoreResult.breakdown.holdingScore,
-        convictionScore: 0, // Not computed in current model
+        convictionScore: 0,
         specializationScore: scoreResult.breakdown.specialScore,
         signalQualityScore: scoreResult.breakdown.pnlScore,
         totalScore: scoreResult.totalScore,
@@ -161,8 +164,6 @@ export class ScoringProcessor extends WorkerHost {
     return { walletId: job.data.walletId, totalScore: scoreResult.totalScore };
   }
 
-  // Job: recalculate-position-risk
-  @Process('recalculate-position-risk')
   async handleRecalculatePositionRisk(job: Job<RecalculatePositionRiskJob>) {
     this.logger.log(`Processing recalculate-position-risk job for position: ${job.data.positionId}`);
 
@@ -176,24 +177,17 @@ export class ScoringProcessor extends WorkerHost {
       return { positionId: job.data.positionId, error: 'Position not found' };
     }
 
-    // Calculate days since review
     const daysSinceReview = position.lastReviewedAt
       ? Math.ceil((Date.now() - new Date(position.lastReviewedAt).getTime()) / (1000 * 60 * 60 * 24))
       : 999;
 
-    // Check if near catalyst window
     const now = new Date();
-    const nearCatalystWindow = 
+    const nearCatalystWindow =
       (position.catalystWindowStart && new Date(position.catalystWindowStart) <= now) &&
       (position.catalystWindowEnd && new Date(position.catalystWindowEnd) >= now);
 
-    // Estimate concentration (would need portfolio context - using maxSizePct as proxy)
     const concentrationPct = position.maxSizePct ?? 10;
-
-    // Map conviction string
     const conviction = (position.currentConviction as 'low' | 'medium' | 'high') || 'medium';
-
-    // Estimate correlation (placeholder - would need portfolio-level analysis)
     const correlationWithOtherPositions = 0.3;
 
     const riskResult = this.scoringService.calculatePositionRisk({
@@ -204,7 +198,6 @@ export class ScoringProcessor extends WorkerHost {
       correlationWithOtherPositions,
     });
 
-    // Save PositionRiskSnapshot
     await this.prisma.positionRiskSnapshot.create({
       data: {
         positionId: position.id,

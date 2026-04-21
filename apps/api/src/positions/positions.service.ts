@@ -4,6 +4,11 @@ import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
 import { Position } from './entities/position.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PositionStatus } from '@crypto-edge/shared';
+
+function toPosition(raw: any): Position {
+  return { ...raw, status: raw.status as PositionStatus } as Position;
+}
 
 @Injectable()
 export class PositionsService {
@@ -23,7 +28,7 @@ export class PositionsService {
       this.prisma.position.count(),
     ]);
 
-    return { data: positions, total };
+    return { data: positions.map(toPosition), total };
   }
 
   async findOne(id: string): Promise<Position> {
@@ -34,14 +39,14 @@ export class PositionsService {
     if (!position) {
       throw new NotFoundException(`Position with id ${id} not found`);
     }
-    return position;
+    return toPosition(position);
   }
 
   async create(dto: CreatePositionDto): Promise<Position> {
     const now = new Date();
     const nextReviewAt = new Date(now.getTime() + (dto.reviewFrequencyDays ?? 7) * 24 * 60 * 60 * 1000);
 
-    return this.prisma.position.create({
+    const position = await this.prisma.position.create({
       data: {
         assetId: dto.assetId,
         status: dto.status ?? 'watchlist',
@@ -58,6 +63,7 @@ export class PositionsService {
         notes: dto.notes,
       },
     });
+    return toPosition(position);
   }
 
   async update(id: string, dto: UpdatePositionDto): Promise<Position> {
@@ -71,7 +77,7 @@ export class PositionsService {
         nextReviewAt: dto.nextReviewAt ? new Date(dto.nextReviewAt) : undefined,
       },
     });
-    return position;
+    return toPosition(position);
   }
 
   async remove(id: string): Promise<void> {

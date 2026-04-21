@@ -23,7 +23,7 @@ export class CatalystsService {
       this.prisma.catalyst.count(),
     ]);
 
-    return { data: catalysts, total };
+    return { data: catalysts as unknown as Catalyst[], total };
   }
 
   async findOne(id: string): Promise<Catalyst> {
@@ -34,27 +34,27 @@ export class CatalystsService {
     if (!catalyst) {
       throw new NotFoundException(`Catalyst with id ${id} not found`);
     }
-    return catalyst;
+    return catalyst as unknown as Catalyst;
   }
 
   async create(dto: CreateCatalystDto): Promise<Catalyst> {
     return this.prisma.catalyst.create({
       data: {
         assetId: dto.assetId,
-        type: dto.type,
+        type: dto.type as any,
         title: dto.title,
         description: dto.description,
         sourceUrl: dto.sourceUrl,
         sourceName: dto.sourceName,
         effectiveAt: new Date(dto.effectiveAt),
-        status: dto.status,
+        status: dto.status as any,
         impactScore: dto.impactScore ?? 50,
         confidenceScore: dto.confidenceScore ?? 50,
         urgencyScore: dto.urgencyScore ?? 50,
         rankScore: 0,
         isManual: dto.isManual ?? true,
       },
-    });
+    }) as unknown as Catalyst;
   }
 
   async update(id: string, dto: UpdateCatalystDto): Promise<Catalyst> {
@@ -62,10 +62,12 @@ export class CatalystsService {
       where: { id },
       data: {
         ...dto,
+        type: dto.type as any,
+        status: dto.status as any,
         effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : undefined,
       },
     });
-    return catalyst;
+    return catalyst as unknown as Catalyst;
   }
 
   async remove(id: string): Promise<void> {

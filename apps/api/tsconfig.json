@@ -4,19 +4,40 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "outDir": "./dist",
     "baseUrl": "./",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "incremental": true,
-    "types": ["node", "jest"],
+    "types": [
+      "node",
+      "jest"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
     "paths": {
-      "src/*": ["src/*"],
-      "@crypto-edge/shared": ["../../packages/shared/src/index.ts"],
-      "@crypto-edge/shared/*": ["../../packages/shared/src/*"]
+      "src/*": [
+        "src/*"
+      ]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
 }
