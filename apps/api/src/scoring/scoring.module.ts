@@ -12,8 +12,10 @@ import { ScoringProcessor } from './scoring.processor';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         connection: {
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          host: configService.get<string>('REDIS_HOST', 'redis'),
           port: configService.get<number>('REDIS_PORT', 6379),
+          username: configService.get<string>('REDIS_USERNAME', 'default'),
+          password: configService.get<string>('REDIS_PASSWORD'),
         },
       }),
     }),
