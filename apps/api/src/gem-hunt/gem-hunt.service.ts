@@ -234,7 +234,7 @@ export class GemHuntService {
     try {
       // DexScreener search endpoint
       const { data } = await axios.get(
-        `https://api.dexscreener.com/search?q=${encodeURIComponent(keyword)}&chain=${chain}`,
+        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(keyword)}&chain=${chain}`,
         { timeout: 10_000 },
       );
 

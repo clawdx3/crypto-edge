@@ -6,22 +6,10 @@ import { UpdateShadowWalletDto } from './dto/update-shadow-wallet.dto';
 import { CreateShadowPositionDto } from './dto/create-shadow-position.dto';
 import { ShadowPositionQueryDto } from './dto/shadow-position-query.dto';
 import { ShadowWalletListQueryDto } from './dto/shadow-wallet-list-query.dto';
+import { getBalanceFetcher } from './balance-fetchers/balance-fetcher.factory';
+import { IBalanceFetcher } from './balance-fetchers/balance-fetcher.interface';
 
 import { ShadowWallet, ShadowPosition, Prisma } from '@prisma/client';
-
-interface DexScreenerPair {
-  baseToken?: { address?: string; symbol?: string };
-  quoteToken?: { address?: string; symbol?: string };
-  priceUsd?: string;
-  volume?: { h24?: number };
-  liquidity?: { usd?: number };
-  url?: string;
-  chainId?: string;
-}
-
-interface DexScreenerSearchResult {
-  pairs?: DexScreenerPair[];
-}
 
 @Injectable()
 export class ShadowWalletsService {
@@ -147,56 +135,39 @@ export class ShadowWalletsService {
     });
   }
 
-  /** ─── DexScreener sync ─── */
+  /** ─── On-chain balance sync ─── */
 
   async syncWalletPositions(walletId: string): Promise<{
     walletId: string;
     newPositions: number;
     updatedPositions: number;
-    pairsFound: number;
+    holdingsFound: number;
   }> {
     const wallet = await this.prisma.shadowWallet.findUnique({ where: { id: walletId } });
     if (!wallet) throw new NotFoundException(`ShadowWallet ${walletId} not found`);
 
-    let pairs: DexScreenerPair[] = [];
+    let holdings: import('./balance-fetchers/balance-fetcher.interface').WalletTokenHolding[] = [];
     try {
-      const chainParam = wallet.chain.toLowerCase();
-      const url = `https://api.dexscreener.com/latest/dex/search?q=${wallet.address}&chain=${chainParam}`;
-      const res = await axios.get<DexScreenerSearchResult>(url, { timeout: 15000 });
-      pairs = res.data?.pairs ?? [];
+      const fetcher = getBalanceFetcher(wallet.chain);
+      holdings = await fetcher.fetchHoldings(wallet.address);
     } catch (err: any) {
-      this.logger.warn(`DexScreener fetch failed for ${wallet.address} (${wallet.chain}): ${err.message}`);
-      return { walletId, newPositions: 0, updatedPositions: 0, pairsFound: 0 };
+      this.logger.warn(`Balance fetch failed for ${wallet.address} (${wallet.chain}): ${err.message}`);
+      return { walletId, newPositions: 0, updatedPositions: 0, holdingsFound: 0 };
     }
 
     let newPositions = 0;
     let updatedPositions = 0;
 
-    for (const pair of pairs) {
-      const base = pair.baseToken;
-      const quote = pair.quoteToken;
-      if (!base || !quote) continue;
-
-      const tokenAddress = base.address ?? '';
-      const tokenSymbol = base.symbol ?? 'UNKNOWN';
-      if (!tokenAddress) continue;
-
-      // Skip obvious stable/wrapped base pairs treated as non-holdings (heuristic)
-      if (tokenAddress.toLowerCase() === wallet.address.toLowerCase()) continue;
-
+    for (const h of holdings) {
       const existing = await this.prisma.shadowPosition.findFirst({
-        where: { shadowWalletId: walletId, tokenAddress },
+        where: { shadowWalletId: walletId, tokenAddress: h.tokenAddress },
       });
-
-      const price = parseFloat(pair.priceUsd ?? '0') || 0;
-      const usdValue = pair.liquidity?.usd ?? undefined;
 
       if (existing) {
         await this.prisma.shadowPosition.update({
           where: { id: existing.id },
           data: {
-            currentPrice: price || existing.currentPrice,
-            usdValue: usdValue ?? existing.usdValue,
+            amountHolding: h.balance,
             isNew: false,
             lastUpdatedAt: new Date(),
           },
@@ -206,11 +177,10 @@ export class ShadowWalletsService {
         await this.prisma.shadowPosition.create({
           data: {
             shadowWalletId: walletId,
-            tokenAddress,
-            tokenSymbol,
+            tokenAddress: h.tokenAddress,
+            tokenSymbol: h.symbol ?? 'UNKNOWN',
             chain: wallet.chain,
-            currentPrice: price || null,
-            usdValue: usdValue || null,
+            amountHolding: h.balance,
             status: 'active',
             isNew: true,
           },
@@ -220,20 +190,20 @@ export class ShadowWalletsService {
     }
 
     this.logger.log(
-      `Synced ${wallet.address}: ${pairs.length} pairs, ${newPositions} new, ${updatedPositions} updated`,
+      `Synced ${wallet.address}: ${holdings.length} holdings, ${newPositions} new, ${updatedPositions} updated`,
     );
 
-    return { walletId, newPositions, updatedPositions, pairsFound: pairs.length };
+    return { walletId, newPositions, updatedPositions, holdingsFound: holdings.length };
   }
 
   async scanAllWallets(): Promise<{
     scanned: number;
     totalNew: number;
     totalUpdated: number;
-    wallets: Array<{ walletId: string; newPositions: number; updatedPositions: number; pairsFound: number }>;
+    wallets: Array<{ walletId: string; newPositions: number; updatedPositions: number; holdingsFound: number }>;
   }> {
     const wallets = await this.prisma.shadowWallet.findMany({ where: { isActive: true } });
-    const results: Array<{ walletId: string; newPositions: number; updatedPositions: number; pairsFound: number }> = [];
+    const results: Array<{ walletId: string; newPositions: number; updatedPositions: number; holdingsFound: number }> = [];
     let totalNew = 0;
     let totalUpdated = 0;
 

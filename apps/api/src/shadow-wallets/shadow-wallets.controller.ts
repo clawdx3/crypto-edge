@@ -64,7 +64,7 @@ export class ShadowWalletsController {
   }
 
   @Post(':id/sync')
-  @ApiOperation({ summary: 'Manually sync positions for a shadow wallet from DexScreener' })
+  @ApiOperation({ summary: 'Manually sync positions for a shadow wallet from on-chain balances' })
   @ApiOkResponse({ description: 'Sync result summary' })
   async sync(@Param('id') id: string) {
     return this.shadowWalletsService.syncWalletPositions(id);

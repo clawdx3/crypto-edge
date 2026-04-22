@@ -33,28 +33,30 @@ export class GemHuntScanner {
   async scanForGems(chain: string = 'solana'): Promise<DexScreenerToken[]> {
     try {
       const response = await axios.get(
-        `${this.dexScreenerBase}/latest/dex/pairs/${chain}`,
+        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
         { timeout: 10000 },
       );
-      const pairs: DexScreenerToken[] = response.data?.pairs ?? [];
+      const pairs: any[] = response.data?.pairs ?? [];
 
-      return pairs.filter((pair) => {
-        const marketCap = parseFloat(pair.marketCap ?? '0');
-        const liquidity = parseFloat(pair.liquidity ?? '0');
-        const volume24h = parseFloat(pair.volume24h ?? '0');
-        const priceChange24h = parseFloat(pair.priceChange?.h24 ?? '0');
-        const holderCount = parseInt(pair.holderCount ?? '0', 10);
+      return pairs
+        .map((p) => this.normalizePair(p, chain))
+        .filter((pair) => {
+          const marketCap = parseFloat(pair.marketCap ?? '0');
+          const liquidity = parseFloat(pair.liquidity ?? '0');
+          const volume24h = parseFloat(pair.volume24h ?? '0');
+          const priceChange24h = parseFloat(pair.priceChange?.h24 ?? '0');
+          const holderCount = parseInt(pair.holderCount ?? '0', 10);
 
-        // Gem filters
-        if (marketCap < 1_000) return false;       // Too micro
-        if (marketCap > 5_000_000) return false;    // Already big
-        if (liquidity < 5_000) return false;        // Too illiquid
-        if (volume24h < 5_000) return false;        // No volume
-        if (priceChange24h < -50) return false;     // Dumping hard
-        if (holderCount > 0 && holderCount < 5) return false; // Ghost token
+          // Gem filters
+          if (marketCap < 1_000) return false;       // Too micro
+          if (marketCap > 5_000_000) return false;    // Already big
+          if (liquidity < 5_000) return false;        // Too illiquid
+          if (volume24h < 5_000) return false;        // No volume
+          if (priceChange24h < -50) return false;     // Dumping hard
+          if (holderCount > 0 && holderCount < 5) return false; // Ghost token
 
-        return true;
-      });
+          return true;
+        });
     } catch (err: any) {
       this.logger.warn(`DexScreener scan failed for ${chain}: ${err.message}`);
       return [];
@@ -108,16 +110,69 @@ export class GemHuntScanner {
   }
 
   /**
+   * Normalize a raw DexScreener v3 API pair into our DexScreenerToken interface.
+   * The v3 API has a different shape: liquidity.usd, volume.h24, baseToken, etc.
+   */
+  private normalizePair(p: any, chain: string): DexScreenerToken {
+    return {
+      address: p.baseToken?.address ?? p.address ?? '',
+      chainId: p.chainId ?? chain,
+      dexId: p.dexId ?? 'unknown',
+      name: p.baseToken?.name ?? p.name ?? '',
+      symbol: p.baseToken?.symbol ?? p.symbol ?? '',
+      quoteTokenAddress: p.quoteToken?.address ?? '',
+      priceUsd: p.priceUsd ?? '0',
+      marketCap: String(p.marketCap ?? p.fdv ?? 0),
+      fdv: String(p.fdv ?? 0),
+      liquidity: String(p.liquidity?.usd ?? p.liquidity ?? 0),
+      volume24h: String(p.volume?.h24 ?? p.volume24h ?? 0),
+      priceChange: {
+        h24: String(p.priceChange?.h24 ?? 0),
+      },
+      txns: {
+        h24: {
+          buys: p.txns?.h24?.buys ?? 0,
+          sells: p.txns?.h24?.sells ?? 0,
+        },
+      },
+      url: p.url ?? `https://dexscreener.com/${p.chainId ?? chain}/${p.baseToken?.address ?? p.address ?? ''}`,
+      pairAddress: p.pairAddress ?? p.address ?? '',
+      holderCount: p.holderCount ?? '0',
+    };
+  }
+
+  /**
    * Get trending tokens from DexScreener boosts endpoint.
+   * Uses all-time boosts then filters to requested chain.
    */
   async getTrending(chain: string = 'solana', limit: number = 20): Promise<DexScreenerToken[]> {
     try {
       const response = await axios.get(
-        `${this.dexScreenerBase}/token-boosts/top/v1/${chain}`,
+        `${this.dexScreenerBase}/token-boosts/top/v1`,
         { timeout: 10_000 },
       );
-      const tokens: DexScreenerToken[] = response.data?.pairs ?? [];
-      return tokens.slice(0, limit);
+      const items: any[] = response.data ?? [];
+      return items
+        .filter((t) => !chain || (t.chainId ?? '').toLowerCase() === chain.toLowerCase())
+        .slice(0, limit)
+        .map((t) => ({
+          address: t.tokenAddress ?? '',
+          chainId: t.chainId ?? chain,
+          dexId: 'unknown',
+          name: '',
+          symbol: '',
+          quoteTokenAddress: '',
+          priceUsd: '0',
+          marketCap: '0',
+          fdv: '0',
+          liquidity: '0',
+          volume24h: '0',
+          priceChange: { h24: '0' },
+          txns: { h24: { buys: 0, sells: 0 } },
+          url: t.url ?? '',
+          pairAddress: '',
+          holderCount: '0',
+        } as DexScreenerToken));
     } catch {
       return [];
     }
@@ -125,36 +180,21 @@ export class GemHuntScanner {
 
   /**
    * Get newest pairs from DexScreener (sorted by creation time, newest first).
-   * This replaces what DEXTools announcements gave us — real-time new pair detection.
-   * GET /latest/dex/pairs/{chain}
+   * Uses the /latest/dex/search endpoint on a common keyword to get fresh pairs,
+   * then sorts by pairCreatedAt descending.
    */
   async getNewestPairs(chain: string = 'solana', limit: number = 50): Promise<DexScreenerToken[]> {
     try {
       const response = await axios.get(
-        `${this.dexScreenerBase}/latest/dex/pairs/${chain}`,
+        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
         { timeout: 10_000 },
       );
       const pairs: any[] = response.data?.pairs ?? [];
 
-      // Return newest pairs (already sorted by creation time on DexScreener's end)
-      return pairs.slice(0, limit).map((p) => ({
-        address: p.baseToken?.address ?? p.address ?? '',
-        chainId: chain,
-        dexId: p.dexId ?? 'unknown',
-        name: p.baseToken?.name ?? p.name ?? '',
-        symbol: p.baseToken?.symbol ?? p.symbol ?? '',
-        quoteTokenAddress: p.quoteToken?.address ?? '',
-        priceUsd: p.priceUsd ?? '0',
-        marketCap: p.baseToken?.marketCap ?? p.marketCap ?? '0',
-        fdv: p.fdv ?? '0',
-        liquidity: p.liquidity ?? '0',
-        volume24h: p.volume24h ?? '0',
-        priceChange: p.priceChange ?? { h24: '0' },
-        txns: p.txns ?? { h24: { buys: 0, sells: 0 } },
-        url: p.url ?? `https://dexscreener.com/${chain}/${p.baseToken?.address ?? p.address}`,
-        pairAddress: p.pairAddress ?? p.address ?? '',
-        holderCount: p.holderCount ?? '0',
-      }));
+      return pairs
+        .sort((a, b) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0))
+        .slice(0, limit)
+        .map((p) => this.normalizePair(p, chain));
     } catch (err: any) {
       this.logger.warn(`DexScreener getNewestPairs failed for ${chain}: ${err.message}`);
       return [];
@@ -163,41 +203,24 @@ export class GemHuntScanner {
 
   /**
    * Search DexScreener for pairs matching a symbol.
-   * Used by CoinGeckoScanner to find DEX pairs for trending coins.
+   * Uses the updated /latest/dex/search endpoint.
    */
   async searchBySymbol(symbol: string, chain: string = 'solana'): Promise<DexScreenerToken[]> {
     try {
       const { data } = await axios.get(
-        `https://api.dexscreener.com/search?q=${encodeURIComponent(symbol)}&chain=${chain}`,
+        `${this.dexScreenerBase}/latest/dex/search?q=${encodeURIComponent(symbol)}&chain=${chain}`,
         { timeout: 10_000 },
       );
 
       const pairs: any[] = data?.pairs ?? [];
       return pairs
         .filter((p) => {
-          const mc = parseFloat(p.baseToken?.marketCap ?? p.marketCap ?? '0');
-          const liq = parseFloat(p.liquidity ?? '0');
+          const mc = parseFloat(p.marketCap ?? p.fdv ?? 0);
+          const liq = parseFloat(p.liquidity?.usd ?? 0);
           return mc > 0 && liq > 0;
         })
         .slice(0, 10)
-        .map((p) => ({
-          address: p.baseToken?.address ?? p.address ?? '',
-          chainId: chain,
-          dexId: p.dexId ?? 'unknown',
-          name: p.baseToken?.name ?? p.name ?? '',
-          symbol: p.baseToken?.symbol ?? p.symbol ?? '',
-          quoteTokenAddress: p.quoteToken?.address ?? '',
-          priceUsd: p.priceUsd ?? p.priceUsd ?? '0',
-          marketCap: p.baseToken?.marketCap ?? p.marketCap ?? '0',
-          fdv: p.fdv ?? '0',
-          liquidity: p.liquidity ?? '0',
-          volume24h: p.volume24h ?? '0',
-          priceChange: p.priceChange ?? { h24: '0' },
-          txns: p.txns ?? { h24: { buys: 0, sells: 0 } },
-          url: p.url ?? `https://dexscreener.com/${chain}/${p.baseToken?.address ?? p.address}`,
-          pairAddress: p.pairAddress ?? p.address ?? '',
-          holderCount: p.holderCount ?? '0',
-        })) as DexScreenerToken[];
+        .map((p) => this.normalizePair(p, chain));
     } catch (err: any) {
       this.logger.warn(`DexScreener symbol search failed for "${symbol}": ${err.message}`);
       return [];

@@ -16,21 +16,19 @@ export class MemeCoinScanner {
 
     for (const chain of this.knownMemeChains) {
       try {
-        // DexScreener token boosts endpoint shows trending tokens
+        // DexScreener token boosts endpoint shows trending tokens (all chains)
         const { data } = await axios.get(
-          `https://api.dexscreener.com/token-boosts/top/v1/${chain}`,
+          `https://api.dexscreener.com/token-boosts/top/v1`,
           { timeout: 10_000 },
         );
-        const pairs = data?.pairs ?? [];
+        const items: any[] = data ?? [];
 
         // Filter for meme-like tokens (high volatility, low market cap)
-        const memes = pairs
-          .filter((p: any) => {
-            const mc = parseFloat(p.marketCap ?? '0');
-            const vol = parseFloat(p.volume24h ?? '0');
-            const change = parseFloat(p.priceChange?.h24 ?? '0');
-            // Meme criteria: sub $5M cap, $10K+ vol, 10%+ move
-            return mc < 5_000_000 && mc > 0 && vol > 10_000 && Math.abs(change) > 10;
+        // Token-boosts data is lightweight; we can't filter by MC yet here.
+        const memes = items
+          .filter((t: any) => {
+            const chainId = (t.chainId ?? '').toLowerCase();
+            return chainId === chain.toLowerCase();
           })
           .slice(0, 10);
 

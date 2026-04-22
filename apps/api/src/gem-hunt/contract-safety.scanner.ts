@@ -69,17 +69,6 @@ export class ContractSafetyScanner {
   }
 
   private async scanSolana(address: string, report: ContractSafetyReport): Promise<void> {
-    // Get token metadata from DexScreener
-    try {
-      const { data } = await axios.get(
-        `https://api.dexscreener.com/token-boosts/top/v1/solana`,
-        { timeout: 10_000 },
-      );
-      // We need specific token data — use the pairs endpoint
-    } catch {
-      // Ignore
-    }
-
     // Get pair data from DexScreener
     try {
       const { data } = await axios.get(
