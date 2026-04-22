@@ -49,12 +49,11 @@ jobs:
             if [ -f /tmp/crypto-edge.env.vps.bak ]; then
               cp -f /tmp/crypto-edge.env.vps.bak /opt/apps/crypto-edge/deploy/.env.vps
             fi
-            docker builder prune -af || true
             cd /opt/apps/crypto-edge/deploy
-            docker compose -f docker-compose.vps.yml --env-file .env.vps up -d --build --force-recreate api web
+            DOCKER_BUILDKIT=0 docker compose -f docker-compose.vps.yml --env-file .env.vps up -d --build --force-recreate api web
             if [ -f ../apps/gem-hunt-scraper/Dockerfile ]; then
               cd /opt/apps/crypto-edge/apps/gem-hunt-scraper
-              docker build -t crypto-edge-scraper:latest .
+              DOCKER_BUILDKIT=0 docker build -t crypto-edge-scraper:latest .
               docker stop crypto-edge-scraper 2>/dev/null || true
               docker rm crypto-edge-scraper 2>/dev/null || true
               docker run -d --name crypto-edge-scraper \
