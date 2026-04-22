@@ -142,40 +142,78 @@ export class GemHuntScanner {
   }
 
   /**
-   * Get trending tokens from DexScreener boosts endpoint.
-   * Uses all-time boosts then filters to requested chain.
+   * Get trending tokens by computing a trend score from /latest/dex/search data.
+   * Real trend signal = volume + recent price momentum + buy pressure,
+   * NOT paid token-boosts.
    */
   async getTrending(chain: string = 'solana', limit: number = 20): Promise<DexScreenerToken[]> {
     try {
       const response = await axios.get(
-        `${this.dexScreenerBase}/token-boosts/top/v1`,
+        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
         { timeout: 10_000 },
       );
-      const items: any[] = response.data ?? [];
-      return items
-        .filter((t) => !chain || (t.chainId ?? '').toLowerCase() === chain.toLowerCase())
-        .slice(0, limit)
-        .map((t) => ({
-          address: t.tokenAddress ?? '',
-          chainId: t.chainId ?? chain,
-          dexId: 'unknown',
-          name: '',
-          symbol: '',
-          quoteTokenAddress: '',
-          priceUsd: '0',
-          marketCap: '0',
-          fdv: '0',
-          liquidity: '0',
-          volume24h: '0',
-          priceChange: { h24: '0' },
-          txns: { h24: { buys: 0, sells: 0 } },
-          url: t.url ?? '',
-          pairAddress: '',
-          holderCount: '0',
-        } as DexScreenerToken));
-    } catch {
+      const pairs: any[] = response.data?.pairs ?? [];
+
+      const scored = pairs
+        .map((p) => {
+          const normalized = this.normalizePair(p, chain);
+          return {
+            token: normalized,
+            trendScore: this.calculateTrendScore(p, normalized),
+          };
+        })
+        .filter((s) => s.trendScore > 0)
+        .sort((a, b) => b.trendScore - a.trendScore);
+
+      return scored.slice(0, limit).map((s) => s.token);
+    } catch (err: any) {
+      this.logger.warn(`DexScreener getTrending failed for ${chain}: ${err.message}`);
       return [];
     }
+  }
+
+  /**
+   * Compute a real trend score from raw pair data.
+   * Factors: short-term volume, price momentum, buy/sell ratio.
+   */
+  private calculateTrendScore(raw: any, normalized: DexScreenerToken): number {
+    const liq = parseFloat(normalized.liquidity ?? '0');
+    if (liq < 5_000) return 0; // ignore illiquid garbage
+
+    const volH1 = parseFloat(raw.volume?.h1 ?? '0');
+    const volH24 = parseFloat(raw.volume?.h24 ?? '0');
+    const priceChangeH1 = parseFloat(raw.priceChange?.h1 ?? '0');
+    const buysH1 = parseInt(raw.txns?.h1?.buys ?? '0', 10);
+    const sellsH1 = parseInt(raw.txns?.h1?.sells ?? '0', 10);
+
+    // Short-term volume signal (heaviest weight)
+    let score = 0;
+    if (volH1 > 100_000) score += 40;
+    else if (volH1 > 50_000) score += 30;
+    else if (volH1 > 10_000) score += 20;
+    else if (volH1 > 5_000) score += 10;
+
+    // Day volume signal
+    if (volH24 > 500_000) score += 15;
+    else if (volH24 > 200_000) score += 10;
+    else if (volH24 > 50_000) score += 5;
+
+    // Recent price momentum (1h)
+    if (priceChangeH1 > 20) score += 25;
+    else if (priceChangeH1 > 10) score += 20;
+    else if (priceChangeH1 > 5) score += 15;
+    else if (priceChangeH1 > 2) score += 10;
+    else if (priceChangeH1 < -10) score -= 10;
+
+    // Buy pressure (1h)
+    if (buysH1 > 0 && sellsH1 >= 0) {
+      const ratio = buysH1 / (sellsH1 + 1);
+      if (ratio > 3) score += 20;
+      else if (ratio > 1.5) score += 10;
+      else if (ratio > 1) score += 5;
+    }
+
+    return score;
   }
 
   /**
