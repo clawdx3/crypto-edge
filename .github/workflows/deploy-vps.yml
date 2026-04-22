@@ -1,0 +1,66 @@
+name: Deploy Crypto-Edge to VPS
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps-master
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release bundle
+        run: |
+          tar --exclude='.git' --exclude='node_modules' --exclude='**/node_modules' --exclude='crypto-edge-release.tgz' -czf /tmp/crypto-edge-release.tgz .
+          cp /tmp/crypto-edge-release.tgz ./crypto-edge-release.tgz
+
+      - name: Upload release bundle to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "crypto-edge-release.tgz"
+          target: "/tmp"
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            mkdir -p /opt/apps
+            if [ -f /opt/apps/crypto-edge/deploy/.env.vps ]; then
+              cp -f /opt/apps/crypto-edge/deploy/.env.vps /tmp/crypto-edge.env.vps.bak
+            fi
+            rm -rf /opt/apps/crypto-edge
+            mkdir -p /opt/apps/crypto-edge
+            tar -xzf /tmp/crypto-edge-release.tgz -C /opt/apps/crypto-edge
+            if [ -f /tmp/crypto-edge.env.vps.bak ]; then
+              cp -f /tmp/crypto-edge.env.vps.bak /opt/apps/crypto-edge/deploy/.env.vps
+            fi
+            cd /opt/apps/crypto-edge/deploy
+            docker compose -f docker-compose.vps.yml --env-file .env.vps up -d --build --force-recreate api web
+            if [ -f ../apps/gem-hunt-scraper/Dockerfile ]; then
+              cd /opt/apps/crypto-edge/apps/gem-hunt-scraper
+              docker build -t crypto-edge-scraper:latest .
+              docker stop crypto-edge-scraper 2>/dev/null || true
+              docker rm crypto-edge-scraper 2>/dev/null || true
+              docker run -d --name crypto-edge-scraper \
+                --restart unless-stopped \
+                --network vps-app-stack_internal \
+                -e PORT=3002 \
+                crypto-edge-scraper:latest
+            fi
+            curl -fsS http://localhost:3101/health >/dev/null
+            echo "Deploy OK"
