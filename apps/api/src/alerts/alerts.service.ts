@@ -3,24 +3,22 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateAlertDto } from './dto/create-alert.dto';
 import { UpdateAlertDto } from './dto/update-alert.dto';
 import { Alert } from './entities/alert.entity';
-import { AlertFiltersDto } from './dto/alert-filters.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { AlertListQueryDto } from './dto/alert-list-query.dto';
 
 @Injectable()
 export class AlertsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(
-    filters: AlertFiltersDto,
-    pagination: PaginationQueryDto,
+    query: AlertListQueryDto,
   ): Promise<{ data: Alert[]; total: number }> {
-    const { page = 1, limit = 20 } = pagination;
+    const { page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
-    if (filters.status) where.status = filters.status;
-    if (filters.type) where.type = filters.type;
-    if (filters.severity) where.severity = filters.severity;
+    if (query.status) where.status = query.status;
+    if (query.type) where.type = query.type;
+    if (query.severity) where.severity = query.severity;
 
     const [alerts, total] = await Promise.all([
       this.prisma.alert.findMany({

@@ -5,7 +5,7 @@ import { CreateShadowWalletDto } from './dto/create-shadow-wallet.dto';
 import { UpdateShadowWalletDto } from './dto/update-shadow-wallet.dto';
 import { CreateShadowPositionDto } from './dto/create-shadow-position.dto';
 import { ShadowPositionQueryDto } from './dto/shadow-position-query.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ShadowWalletListQueryDto } from './dto/shadow-wallet-list-query.dto';
 
 import { ShadowWallet, ShadowPosition, Prisma } from '@prisma/client';
 
@@ -45,9 +45,8 @@ export class ShadowWalletsService {
     });
   }
 
-  async findAll(pagination: PaginationQueryDto, filters: { chain?: string | undefined; category?: string | undefined; isActive?: boolean | undefined }) {
-    const { page = 1, limit = 20 } = pagination;
-    const { chain, category, isActive } = filters;
+  async findAll(query: ShadowWalletListQueryDto) {
+    const { page = 1, limit = 20, chain, category, isActive } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ShadowWalletWhereInput = {};

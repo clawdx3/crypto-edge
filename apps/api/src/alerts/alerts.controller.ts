@@ -4,8 +4,7 @@ import { AlertsService } from './alerts.service';
 import { CreateAlertDto } from './dto/create-alert.dto';
 import { UpdateAlertDto } from './dto/update-alert.dto';
 import { Alert } from './entities/alert.entity';
-import { AlertFiltersDto } from './dto/alert-filters.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { AlertListQueryDto } from './dto/alert-list-query.dto';
 
 @ApiTags('alerts')
 @Controller('alerts')
@@ -15,8 +14,8 @@ export class AlertsController {
   @Get()
   @ApiOperation({ summary: 'List alerts with filters and pagination' })
   @ApiOkResponse({ description: 'Paginated list of alerts' })
-  async findAll(@Query() filters: AlertFiltersDto, @Query() pagination: PaginationQueryDto) {
-    return this.alertsService.findAll(filters, pagination);
+  async findAll(@Query() query: AlertListQueryDto) {
+    return this.alertsService.findAll(query);
   }
 
   @Get(':id')

@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
 import { Position } from './entities/position.entity';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PositionListQueryDto } from './dto/position-list-query.dto';
 import { PositionStatus } from '@crypto-edge/shared';
 
 function toPosition(raw: any): Position {
@@ -14,18 +14,22 @@ function toPosition(raw: any): Position {
 export class PositionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(pagination: PaginationQueryDto): Promise<{ data: Position[]; total: number }> {
-    const { page = 1, limit = 20 } = pagination;
+  async findAll(query: PositionListQueryDto): Promise<{ data: Position[]; total: number }> {
+    const { page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
+
+    const where: Record<string, unknown> = {};
+    if (query.status) where.status = query.status;
 
     const [positions, total] = await Promise.all([
       this.prisma.position.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: { asset: true },
       }),
-      this.prisma.position.count(),
+      this.prisma.position.count({ where }),
     ]);
 
     return { data: positions.map(toPosition), total };

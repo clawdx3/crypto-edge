@@ -6,7 +6,7 @@ import { PositionsService } from './positions.service';
 import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
 import { Position } from './entities/position.entity';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PositionListQueryDto } from './dto/position-list-query.dto';
 
 @ApiTags('positions')
 @Controller('positions')
@@ -17,10 +17,10 @@ export class PositionsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all positions with pagination' })
+  @ApiOperation({ summary: 'List all positions with pagination and filters' })
   @ApiOkResponse({ description: 'Paginated list of positions' })
-  async findAll(@Query() pagination: PaginationQueryDto) {
-    return this.positionsService.findAll(pagination);
+  async findAll(@Query() query: PositionListQueryDto) {
+    return this.positionsService.findAll(query);
   }
 
   @Get(':id')

@@ -11,7 +11,7 @@ import { CreateShadowWalletDto } from './dto/create-shadow-wallet.dto';
 import { UpdateShadowWalletDto } from './dto/update-shadow-wallet.dto';
 import { ShadowWalletResponseDto } from './dto/shadow-wallet-response.dto';
 import { ShadowPositionQueryDto } from './dto/shadow-position-query.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ShadowWalletListQueryDto } from './dto/shadow-wallet-list-query.dto';
 
 @ApiTags('shadow-wallets')
 @Controller('shadow-wallets')
@@ -29,18 +29,9 @@ export class ShadowWalletsController {
   @ApiOperation({ summary: 'List shadow wallets with optional filters' })
   @ApiOkResponse({ type: ShadowWalletResponseDto, isArray: true })
   async findAll(
-    @Query() pagination: PaginationQueryDto,
-    @Query('chain') chain?: string,
-    @Query('category') category?: string,
-    @Query('isActive') isActive?: string,
+    @Query() query: ShadowWalletListQueryDto,
   ) {
-    const parsedIsActive: boolean | undefined =
-      isActive === undefined ? undefined : isActive === 'true' || isActive === '1';
-    return this.shadowWalletsService.findAll(pagination, {
-      chain,
-      category,
-      isActive: parsedIsActive,
-    });
+    return this.shadowWalletsService.findAll(query);
   }
 
   @Get(':id')
