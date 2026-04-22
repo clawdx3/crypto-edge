@@ -28,17 +28,35 @@ export class GemHuntScanner {
 
   /**
    * Scan DexScreener for latest pairs on a chain.
+   * Uses broad-keyword search + dedup to work around DexScreener requiring non-empty q=.
    * Returns tokens matching gem criteria.
    */
   async scanForGems(chain: string = 'solana'): Promise<DexScreenerToken[]> {
     try {
-      const response = await axios.get(
-        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
-        { timeout: 10000 },
-      );
-      const pairs: any[] = response.data?.pairs ?? [];
+      const broadKeywords = ['SOL', 'USDC', 'TOKEN', 'MEME', 'WIF', 'BONK'];
+      const seenPairs = new Map<string, any>();
 
-      return pairs
+      await Promise.all(
+        broadKeywords.map(async (q) => {
+          try {
+            const response = await axios.get(
+              `${this.dexScreenerBase}/latest/dex/search?q=${encodeURIComponent(q)}&chain=${chain}`,
+              { timeout: 10_000 },
+            );
+            const pairs: any[] = response.data?.pairs ?? [];
+            for (const p of pairs) {
+              const key = p.pairAddress ?? `${p.chainId ?? chain}-${p.baseToken?.address ?? p.address}`;
+              if (!seenPairs.has(key)) {
+                seenPairs.set(key, p);
+              }
+            }
+          } catch {
+            // ignore individual keyword failures
+          }
+        }),
+      );
+
+      return Array.from(seenPairs.values())
         .map((p) => this.normalizePair(p, chain))
         .filter((pair) => {
           const marketCap = parseFloat(pair.marketCap ?? '0');
@@ -145,16 +163,37 @@ export class GemHuntScanner {
    * Get trending tokens by computing a trend score from /latest/dex/search data.
    * Real trend signal = volume + recent price momentum + buy pressure,
    * NOT paid token-boosts.
+   *
+   * DexScreener search requires non-empty q=. We rotate broad keywords,
+   * collect unique pairs, then score and rank.
    */
   async getTrending(chain: string = 'solana', limit: number = 20): Promise<DexScreenerToken[]> {
     try {
-      const response = await axios.get(
-        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
-        { timeout: 10_000 },
-      );
-      const pairs: any[] = response.data?.pairs ?? [];
+      const broadKeywords = ['SOL', 'USDC', 'TOKEN', 'MEME', 'WIF', 'BONK', 'WETH'];
+      const seenPairs = new Map<string, any>();
 
-      const scored = pairs
+      // Fire parallel searches for broad keywords
+      await Promise.all(
+        broadKeywords.map(async (q) => {
+          try {
+            const response = await axios.get(
+              `${this.dexScreenerBase}/latest/dex/search?q=${encodeURIComponent(q)}&chain=${chain}`,
+              { timeout: 10_000 },
+            );
+            const pairs: any[] = response.data?.pairs ?? [];
+            for (const p of pairs) {
+              const key = p.pairAddress ?? `${p.chainId ?? chain}-${p.baseToken?.address ?? p.address}`;
+              if (!seenPairs.has(key)) {
+                seenPairs.set(key, p);
+              }
+            }
+          } catch {
+            // ignore individual keyword failures
+          }
+        }),
+      );
+
+      const scored = Array.from(seenPairs.values())
         .map((p) => {
           const normalized = this.normalizePair(p, chain);
           return {
@@ -218,18 +257,30 @@ export class GemHuntScanner {
 
   /**
    * Get newest pairs from DexScreener (sorted by creation time, newest first).
-   * Uses the /latest/dex/search endpoint on a common keyword to get fresh pairs,
-   * then sorts by pairCreatedAt descending.
+   * Uses broad-keyword search to get pairs, then sorts by pairCreatedAt descending.
    */
   async getNewestPairs(chain: string = 'solana', limit: number = 50): Promise<DexScreenerToken[]> {
     try {
-      const response = await axios.get(
-        `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
-        { timeout: 10_000 },
-      );
-      const pairs: any[] = response.data?.pairs ?? [];
+      const broadKeywords = ['SOL', 'USDC', 'TOKEN', 'MEME', 'WIF', 'BONK', 'WETH'];
+      const seenPairs = new Map<string, any>();
 
-      return pairs
+      await Promise.all(
+        broadKeywords.map(async (q) => {
+          try {
+            const response = await axios.get(
+              `${this.dexScreenerBase}/latest/dex/search?q=${encodeURIComponent(q)}&chain=${chain}`,
+              { timeout: 10_000 },
+            );
+            const pairs: any[] = response.data?.pairs ?? [];
+            for (const p of pairs) {
+              const key = p.pairAddress ?? `${p.chainId ?? chain}-${p.baseToken?.address ?? p.address}`;
+              if (!seenPairs.has(key)) seenPairs.set(key, p);
+            }
+          } catch { /* ignore */ }
+        }),
+      );
+
+      return Array.from(seenPairs.values())
         .sort((a, b) => (b.pairCreatedAt ?? 0) - (a.pairCreatedAt ?? 0))
         .slice(0, limit)
         .map((p) => this.normalizePair(p, chain));

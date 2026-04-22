@@ -36,30 +36,39 @@ export class MemeCoinScanner {
 
   async scanTrendingMemeCoins(): Promise<any[]> {
     const allMemes: any[] = [];
+    const broadKeywords = ['SOL', 'USDC', 'TOKEN', 'MEME', 'WIF', 'BONK', 'WETH'];
 
     for (const chain of this.knownMemeChains) {
-      try {
-        const { data } = await axios.get(
-          `${this.dexScreenerBase}/latest/dex/search?q=&chain=${chain}`,
-          { timeout: 10_000 },
-        );
-        const pairs: any[] = data?.pairs ?? [];
+      const seenPairs = new Map<string, any>();
 
-        const scoredPairs = pairs
-          .map((p) => {
-            const normalized = this.normalizePair(p, chain);
-            return {
-              ...normalized,
-              memeScore: this.calculateMemeScore(p, normalized),
-            };
-          })
-          .filter((s) => s.memeScore > 30)
-          .sort((a, b) => b.memeScore - a.memeScore);
+      await Promise.all(
+        broadKeywords.map(async (q) => {
+          try {
+            const { data } = await axios.get(
+              `${this.dexScreenerBase}/latest/dex/search?q=${encodeURIComponent(q)}&chain=${chain}`,
+              { timeout: 10_000 },
+            );
+            const pairs: any[] = data?.pairs ?? [];
+            for (const p of pairs) {
+              const key = p.pairAddress ?? `${p.chainId ?? chain}-${p.baseToken?.address ?? p.address}`;
+              if (!seenPairs.has(key)) seenPairs.set(key, p);
+            }
+          } catch { /* ignore */ }
+        }),
+      );
 
-        allMemes.push(...scoredPairs.slice(0, 10));
-      } catch (err: any) {
-        this.logger.warn(`Meme scan failed for ${chain}: ${err.message}`);
-      }
+      const scoredPairs = Array.from(seenPairs.values())
+        .map((p) => {
+          const normalized = this.normalizePair(p, chain);
+          return {
+            ...normalized,
+            memeScore: this.calculateMemeScore(p, normalized),
+          };
+        })
+        .filter((s) => s.memeScore > 30)
+        .sort((a, b) => b.memeScore - a.memeScore);
+
+      allMemes.push(...scoredPairs.slice(0, 10));
     }
 
     // Deduplicate by address
